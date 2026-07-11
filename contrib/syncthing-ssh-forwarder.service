@@ -3,7 +3,7 @@ Description=Syncthing Socket SSH Forwarder
 After=network.target
 
 [Service]
-Type=simple
+Type=notify
 DynamicUser=yes
 StateDirectory=syncthing-ssh-forwarder
 WorkingDirectory=/var/lib/syncthing-ssh-forwarder

@@ -262,6 +262,8 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		return fmt.Errorf("failed to create relay client: %w", err)
 	}
 
+	systemdNotify("STATUS=Connecting to relay...")
+
 	go func() {
 		if err := relayClient.Serve(ctx); err != nil {
 			log.Printf("Relay client stopped: %v", err)
@@ -291,6 +293,8 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	fmt.Printf("Or simply:\n")
 	fmt.Printf("  ./syncthing-socket client %s@%s\n", serverID.String(), connectedURI.String())
 	fmt.Println("==================================================")
+
+	systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
 
 	// Start background announcement
 	if len(discoveryServers) > 0 {
@@ -475,4 +479,17 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) 
 	if err != nil && err != io.EOF {
 		log.Printf("Forward connection closed with error: %v", err)
 	}
+}
+
+func systemdNotify(state string) {
+	socketPath := os.Getenv("NOTIFY_SOCKET")
+	if socketPath == "" {
+		return
+	}
+	conn, err := net.Dial("unixgram", socketPath)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	_, _ = conn.Write([]byte(state))
 }
