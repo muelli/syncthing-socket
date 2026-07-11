@@ -84,7 +84,7 @@ Specify the relay address manually via the `-relay` flag:
 #### Client Options:
 - `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
 - `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
-- `-direct`: Try direct TCP connections before falling back to relay (default: true).
+- `-direct`: Try direct TCP connections before falling back to relay. Set `-direct=false` to disable direct attempts and force relay connections (default: true).
 - `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
