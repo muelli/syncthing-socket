@@ -46,10 +46,13 @@ Or simply:
 ```
 
 #### Server Options:
-- `-cert <path>`: Custom TLS certificate path (default: `cert.pem`).
-- `-key <path>`: Custom TLS key path (default: `key.pem`).
+- `-cert <path>`: Custom TLS certificate path (default: empty, runs in-memory).
+- `-key <path>`: Custom TLS key path (default: empty, runs in-memory).
 - `-relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
 - `-discovery <urls>`: Comma-separated list of global announce directories.
+- `-direct-port <port>`: Enable direct TCP connection listening on this port (0 to disable, default: 0).
+- `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
+- `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
 ---
 
@@ -81,6 +84,9 @@ Specify the relay address manually via the `-relay` flag:
 #### Client Options:
 - `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
 - `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
+- `-direct`: Try direct TCP connections before falling back to relay (default: true).
+- `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
+- `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
 ---
 
