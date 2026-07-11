@@ -1,0 +1,15 @@
+[Unit]
+Description=Syncthing Socket SSH Forwarder
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=syncthing-ssh-forwarder
+WorkingDirectory=/var/lib/syncthing-ssh-forwarder
+ExecStart=/usr/local/bin/syncthing-socket server -cert cert.pem -key key.pem -forward 127.0.0.1:22
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
