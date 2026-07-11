@@ -53,7 +53,7 @@ func (h *CustomHandler) Handle(ctx context.Context, r slog.Record) error {
 		buf.WriteString(prefix)
 	}
 
-	// Output time only in non-journald text logs (journald timestamps internally)
+	// Output time only in non-journald text logs
 	if h.format != "journald" {
 		buf.WriteString(r.Time.Format("2006-01-02 15:04:05.000"))
 		buf.WriteString(" ")
@@ -151,6 +151,7 @@ func main() {
 	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
+	serverDirectPort := serverCmd.Int("direct-port", 0, "Enable direct TCP connection listening on this port (0 to disable)")
 	serverLogLevel := serverCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
 	serverLogFormat := serverCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
 
@@ -159,6 +160,7 @@ func main() {
 	clientKey := clientCmd.String("key", "", "Path to TLS key (optional)")
 	clientRelay := clientCmd.String("relay", "", "Relay URI (if specified, bypasses discovery lookup)")
 	clientDiscovery := clientCmd.String("discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
+	clientTryDirect := clientCmd.Bool("direct", true, "Try direct TCP connections before falling back to relay")
 	clientLogLevel := clientCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientLogFormat := clientCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
 
@@ -198,7 +200,7 @@ func main() {
 				}
 			}
 		}
-		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward); err != nil {
+		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort); err != nil {
 			slog.Error("Server error", "error", err)
 			os.Exit(1)
 		}
@@ -242,7 +244,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery); err != nil {
+		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery, *clientTryDirect); err != nil {
 			slog.Error("Client error", "error", err)
 			os.Exit(1)
 		}
@@ -271,12 +273,12 @@ func loadOrGenerateCert(certPath, keyPath string) (tls.Certificate, error) {
 	return tlsutil.NewCertificate(certPath, keyPath, "syncthing-socket", 3650)
 }
 
-func announce(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string) {
+func announce(ctx context.Context, cert tls.Certificate, addresses []string, discoveryServers []string) {
 	type AnnouncePayload struct {
 		Addresses []string `json:"addresses"`
 	}
 	payload := AnnouncePayload{
-		Addresses: []string{relayURI},
+		Addresses: addresses,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -301,7 +303,7 @@ func announce(ctx context.Context, cert tls.Certificate, relayURI string, discov
 			defer ticker.Stop()
 
 			for {
-				slog.Debug("Announcing availability to discovery server", "ds", ds)
+				slog.Debug("Announcing availability to discovery server", "ds", ds, "addresses", addresses)
 				req, err := http.NewRequestWithContext(ctx, "POST", ds, strings.NewReader(string(body)))
 				if err != nil {
 					slog.Error("Failed to create announce request", "ds", ds, "error", err)
@@ -330,7 +332,7 @@ func announce(ctx context.Context, cert tls.Certificate, relayURI string, discov
 	}
 }
 
-func lookup(ctx context.Context, serverID string, discoveryServer string) (string, error) {
+func lookup(ctx context.Context, serverID string, discoveryServer string) ([]string, error) {
 	urlStr := fmt.Sprintf("%s&device=%s", discoveryServer, serverID)
 	if !strings.Contains(discoveryServer, "?") {
 		urlStr = fmt.Sprintf("%s?device=%s", discoveryServer, serverID)
@@ -349,20 +351,20 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 	slog.Debug("Looking up server address on discovery server", "ds", discoveryServer, "serverID", serverID)
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("device %s not found in discovery", serverID)
+		return nil, fmt.Errorf("device %s not found in discovery", serverID)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("discovery lookup returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("discovery lookup returned HTTP %d", resp.StatusCode)
 	}
 
 	type LookupResponse struct {
@@ -370,20 +372,13 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 	}
 	var lr LookupResponse
 	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	for _, addr := range lr.Addresses {
-		if strings.HasPrefix(addr, "relay://") {
-			slog.Debug("Resolved server address", "address", addr)
-			return addr, nil
-		}
-	}
-
-	return "", fmt.Errorf("no relay addresses found for device %s (found: %v)", serverID, lr.Addresses)
+	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -394,6 +389,21 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	fmt.Printf("Server Device ID: %s\n", serverID)
 	fmt.Println("==================================================")
 	slog.Info("Server Device ID computed", "id", serverID.String())
+
+	var tcpListener net.Listener
+	if directPort > 0 {
+		tcpAddr := fmt.Sprintf(":%d", directPort)
+		tcpListener, err = net.Listen("tcp", tcpAddr)
+		if err != nil {
+			return fmt.Errorf("failed to start direct TCP listener: %w", err)
+		}
+		defer tcpListener.Close()
+
+		actualPort := tcpListener.Addr().(*net.TCPAddr).Port
+		slog.Info("Direct TCP listener started", "port", actualPort)
+		fmt.Printf("Direct TCP Port: %d\n", actualPort)
+		fmt.Println("==================================================")
+	}
 
 	slog.Info("Relay client starting", "relay", u.String())
 	relayClient, err := client.NewClient(u, []tls.Certificate{cert}, 15*time.Second)
@@ -436,30 +446,100 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 	systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
 
-	if len(discoveryServers) > 0 {
-		announce(ctx, cert, connectedURI.String(), discoveryServers)
+	var announceAddrs []string
+	announceAddrs = append(announceAddrs, connectedURI.String())
+	if directPort > 0 {
+		actualPort := tcpListener.Addr().(*net.TCPAddr).Port
+		announceAddrs = append(announceAddrs, fmt.Sprintf("tcp://:%d", actualPort))
 	}
 
-	invs := relayClient.Invitations()
-	for {
-		select {
-		case inv, ok := <-invs:
-			if !ok {
-				return fmt.Errorf("invitations channel closed")
-			}
-			slog.Info("Received invitation from relay, joining session")
-			conn, err := client.JoinSession(ctx, inv)
-			if err != nil {
-				slog.Error("Failed to join session", "error", err)
-				continue
-			}
+	if len(discoveryServers) > 0 {
+		announce(ctx, cert, announceAddrs, discoveryServers)
+	}
 
-			if forwardAddr != "" {
+	if forwardAddr != "" {
+		// Forwarding Mode: accept connections indefinitely from both channels
+		if directPort > 0 {
+			go func() {
+				for {
+					conn, err := tcpListener.Accept()
+					if err != nil {
+						slog.Error("Direct TCP listener stopped", "error", err)
+						return
+					}
+					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
+					go handleForwardConn(conn, cert, forwardAddr)
+				}
+			}()
+		}
+
+		invs := relayClient.Invitations()
+		for {
+			select {
+			case inv, ok := <-invs:
+				if !ok {
+					return fmt.Errorf("invitations channel closed")
+				}
+				slog.Info("Received invitation from relay, joining session")
+				conn, err := client.JoinSession(ctx, inv)
+				if err != nil {
+					slog.Error("Failed to join session", "error", err)
+					continue
+				}
 				go handleForwardConn(conn, cert, forwardAddr)
-			} else {
-				handleServerConn(conn, cert)
-				return nil
+			case <-ctx.Done():
+				return ctx.Err()
 			}
+		}
+	} else {
+		// Simple Netcat Mode: accept exactly one connection and exit
+		connChan := make(chan net.Conn, 1)
+
+		if directPort > 0 {
+			go func() {
+				conn, err := tcpListener.Accept()
+				if err != nil {
+					return
+				}
+				select {
+				case connChan <- conn:
+					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
+				default:
+					conn.Close()
+				}
+			}()
+		}
+
+		go func() {
+			invs := relayClient.Invitations()
+			for {
+				select {
+				case inv, ok := <-invs:
+					if !ok {
+						return
+					}
+					slog.Info("Received invitation from relay, joining session")
+					conn, err := client.JoinSession(ctx, inv)
+					if err != nil {
+						slog.Error("Failed to join session", "error", err)
+						continue
+					}
+					select {
+					case connChan <- conn:
+						return
+					default:
+						conn.Close()
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+
+		select {
+		case conn := <-connChan:
+			handleServerConn(conn, cert)
+			return nil
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -492,25 +572,88 @@ func handleServerConn(conn net.Conn, cert tls.Certificate) {
 	pipeBiDirectional(tlsConn)
 }
 
-func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string) error {
+func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool) error {
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)
 	}
 
-	var relayURI string
+	var addresses []string
 	if relayURIOverride != "" {
-		relayURI = relayURIOverride
+		addresses = []string{relayURIOverride}
 	} else {
 		fmt.Println("Looking up server address on discovery server...")
-		resolved, err := lookup(ctx, serverID.String(), discoveryServer)
+		var err error
+		addresses, err = lookup(ctx, serverID.String(), discoveryServer)
 		if err != nil {
 			return fmt.Errorf("discovery lookup failed: %w", err)
 		}
-		relayURI = resolved
-		fmt.Printf("Resolved server address: %s\n", relayURI)
+		slog.Debug("Resolved addresses from discovery", "addresses", addresses)
 	}
 
+	var directAddresses []string
+	var relayAddresses []string
+
+	for _, addr := range addresses {
+		if strings.HasPrefix(addr, "tcp://") {
+			directAddresses = append(directAddresses, addr)
+		} else if strings.HasPrefix(addr, "relay://") {
+			relayAddresses = append(relayAddresses, addr)
+		}
+	}
+
+	if tryDirect && len(directAddresses) > 0 {
+		for _, addrStr := range directAddresses {
+			slog.Info("Attempting direct TCP connection", "address", addrStr)
+			u, err := url.Parse(addrStr)
+			if err != nil {
+				slog.Warn("Failed to parse direct address", "address", addrStr, "error", err)
+				continue
+			}
+
+			dialer := net.Dialer{Timeout: 5 * time.Second}
+			conn, err := dialer.DialContext(ctx, "tcp", u.Host)
+			if err != nil {
+				slog.Debug("Direct connection failed", "address", addrStr, "error", err)
+				continue
+			}
+
+			tlsConn := tls.Client(conn, &tls.Config{
+				Certificates:       []tls.Certificate{cert},
+				InsecureSkipVerify: true,
+				MinVersion:         tls.VersionTLS13,
+			})
+			if err := tlsConn.Handshake(); err != nil {
+				slog.Debug("Direct connection TLS handshake failed", "address", addrStr, "error", err)
+				conn.Close()
+				continue
+			}
+
+			state := tlsConn.ConnectionState()
+			if len(state.PeerCertificates) == 0 {
+				slog.Debug("Direct connection presented no certificates", "address", addrStr)
+				tlsConn.Close()
+				continue
+			}
+			peerID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+			if peerID != serverID {
+				slog.Warn("Direct connection Device ID mismatch", "expected", serverID.String(), "got", peerID.String())
+				tlsConn.Close()
+				continue
+			}
+
+			slog.Info("Connected directly (bypassing relay)", "address", addrStr)
+			pipeBiDirectional(tlsConn)
+			return nil
+		}
+		slog.Info("All direct TCP connections failed, falling back to relay...")
+	}
+
+	if len(relayAddresses) == 0 {
+		return fmt.Errorf("no connectable relay or TCP addresses found")
+	}
+
+	relayURI := relayAddresses[0]
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -551,7 +694,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		return fmt.Errorf("security mismatch: connected to device %s, expected %s", peerID, serverID)
 	}
 
-	slog.Info("Connected successfully, tunnel active", "peerID", peerID.String())
+	slog.Info("Connected successfully via relay, tunnel active", "peerID", peerID.String())
 	pipeBiDirectional(tlsConn)
 	return nil
 }
