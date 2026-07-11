@@ -28,6 +28,7 @@ func main() {
 	serverKey := serverCmd.String("key", "", "Path to TLS key (optional)")
 	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
+	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
 
 	clientCmd := flag.NewFlagSet("client", flag.ExitOnError)
 	clientCert := clientCmd.String("cert", "", "Path to TLS certificate (optional)")
@@ -67,7 +68,7 @@ func main() {
 				}
 			}
 		}
-		if err := runServer(ctx, cert, *serverRelay, discoveryServers); err != nil {
+		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}
 
@@ -245,7 +246,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 	return "", fmt.Errorf("no relay addresses found for device %s (found: %v)", serverID, lr.Addresses)
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -310,8 +311,12 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 				continue
 			}
 
-			handleServerConn(conn, cert)
-			return nil // exit after the first connection closes (netcat style)
+			if forwardAddr != "" {
+				go handleForwardConn(conn, cert, forwardAddr)
+			} else {
+				handleServerConn(conn, cert)
+				return nil // exit after the first connection closes (netcat style)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -423,5 +428,51 @@ func pipeBiDirectional(conn net.Conn) {
 	err := <-errChan
 	if err != nil && err != io.EOF {
 		log.Printf("Connection error: %v", err)
+	}
+}
+
+func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) {
+	defer conn.Close()
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequestClientCert,
+		MinVersion:   tls.VersionTLS13,
+	}
+	tlsConn := tls.Server(conn, tlsConfig)
+	if err := tlsConn.Handshake(); err != nil {
+		log.Printf("TLS handshake failed: %v", err)
+		return
+	}
+	defer tlsConn.Close()
+
+	state := tlsConn.ConnectionState()
+	if len(state.PeerCertificates) > 0 {
+		clientID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+		log.Printf("Connection established with client: %s -> forwarding to %s", clientID.String(), forwardAddr)
+	} else {
+		log.Printf("Connection established with anonymous client -> forwarding to %s", forwardAddr)
+	}
+
+	localConn, err := net.Dial("tcp", forwardAddr)
+	if err != nil {
+		log.Printf("Failed to connect to forward target %s: %v", forwardAddr, err)
+		return
+	}
+	defer localConn.Close()
+
+	errChan := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(localConn, tlsConn)
+		errChan <- err
+	}()
+	go func() {
+		_, err := io.Copy(tlsConn, localConn)
+		errChan <- err
+	}()
+
+	err = <-errChan
+	if err != nil && err != io.EOF {
+		log.Printf("Forward connection closed with error: %v", err)
 	}
 }
