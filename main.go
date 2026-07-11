@@ -7,7 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,6 +22,128 @@ import (
 	"github.com/syncthing/syncthing/lib/tlsutil"
 )
 
+const LevelTrace = slog.Level(-8)
+
+type CustomHandler struct {
+	format string
+	level  slog.Level
+}
+
+func (h *CustomHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.level
+}
+
+func (h *CustomHandler) Handle(ctx context.Context, r slog.Record) error {
+	var buf strings.Builder
+
+	if h.format == "journald" {
+		var prefix string
+		switch {
+		case r.Level <= LevelTrace:
+			prefix = "<7>" // Debug/Trace priority
+		case r.Level < slog.LevelInfo:
+			prefix = "<7>" // Debug priority
+		case r.Level < slog.LevelWarn:
+			prefix = "<6>" // Info priority
+		case r.Level < slog.LevelError:
+			prefix = "<4>" // Warning priority
+		default:
+			prefix = "<3>" // Error priority
+		}
+		buf.WriteString(prefix)
+	}
+
+	// Output time only in non-journald text logs (journald timestamps internally)
+	if h.format != "journald" {
+		buf.WriteString(r.Time.Format("2006-01-02 15:04:05.000"))
+		buf.WriteString(" ")
+	}
+
+	levelStr := r.Level.String()
+	if r.Level <= LevelTrace {
+		levelStr = "TRACE"
+	}
+	buf.WriteString("[")
+	buf.WriteString(levelStr)
+	buf.WriteString("] ")
+
+	buf.WriteString(r.Message)
+
+	r.Attrs(func(a slog.Attr) bool {
+		buf.WriteString(fmt.Sprintf(" %s=%v", a.Key, a.Value.Any()))
+		return true
+	})
+
+	buf.WriteString("\n")
+	_, err := os.Stderr.WriteString(buf.String())
+	return err
+}
+
+func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *CustomHandler) WithGroup(name string) slog.Handler {
+	return h
+}
+
+func setupLogging(levelStr, formatStr string) {
+	var level slog.Level
+	switch strings.ToLower(levelStr) {
+	case "trace":
+		level = LevelTrace
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	if formatStr == "auto" {
+		formatStr = defaultLogFormat()
+	}
+
+	var handler slog.Handler
+	if strings.ToLower(formatStr) == "json" {
+		opts := &slog.HandlerOptions{
+			Level: level,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == slog.LevelKey {
+					l := a.Value.Any().(slog.Level)
+					if l <= LevelTrace {
+						return slog.String(slog.LevelKey, "TRACE")
+					}
+				}
+				return a
+			},
+		}
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		handler = &CustomHandler{
+			format: strings.ToLower(formatStr),
+			level:  level,
+		}
+	}
+
+	slog.SetDefault(slog.New(handler))
+}
+
+func defaultLogFormat() string {
+	if os.Getenv("INVOCATION_ID") != "" || os.Getenv("JOURNAL_STREAM") != "" {
+		return "journald"
+	}
+	return "text"
+}
+
+func isTraceEnabled() bool {
+	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
+}
+
 func main() {
 	serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
 	serverCert := serverCmd.String("cert", "", "Path to TLS certificate (optional)")
@@ -29,12 +151,16 @@ func main() {
 	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
+	serverLogLevel := serverCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
+	serverLogFormat := serverCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
 
 	clientCmd := flag.NewFlagSet("client", flag.ExitOnError)
 	clientCert := clientCmd.String("cert", "", "Path to TLS certificate (optional)")
 	clientKey := clientCmd.String("key", "", "Path to TLS key (optional)")
 	clientRelay := clientCmd.String("relay", "", "Relay URI (if specified, bypasses discovery lookup)")
 	clientDiscovery := clientCmd.String("discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
+	clientLogLevel := clientCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
+	clientLogFormat := clientCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -47,6 +173,8 @@ func main() {
 	switch os.Args[1] {
 	case "server":
 		serverCmd.Parse(os.Args[2:])
+		setupLogging(*serverLogLevel, *serverLogFormat)
+
 		var cert tls.Certificate
 		var err error
 		if *serverCert != "" && *serverKey != "" {
@@ -54,10 +182,12 @@ func main() {
 		} else if *serverCert == "" && *serverKey == "" {
 			cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-server", 365)
 		} else {
-			log.Fatalf("Error: both -cert and -key must be specified if one is provided")
+			slog.Error("Error: both -cert and -key must be specified if one is provided")
+			os.Exit(1)
 		}
 		if err != nil {
-			log.Fatalf("Error getting server cert: %v", err)
+			slog.Error("Error getting server cert", "error", err)
+			os.Exit(1)
 		}
 		var discoveryServers []string
 		if *serverDiscovery != "" {
@@ -69,11 +199,14 @@ func main() {
 			}
 		}
 		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward); err != nil {
-			log.Fatalf("Server error: %v", err)
+			slog.Error("Server error", "error", err)
+			os.Exit(1)
 		}
 
 	case "client":
 		clientCmd.Parse(os.Args[2:])
+		setupLogging(*clientLogLevel, *clientLogFormat)
+
 		args := clientCmd.Args()
 		if len(args) < 1 {
 			fmt.Println("Error: client mode requires target server Device ID")
@@ -81,7 +214,6 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Support combined string like SERVER_ID@RELAY_URI
 		targetStr := args[0]
 		var serverID string
 		var relayURI string
@@ -102,14 +234,17 @@ func main() {
 		} else if *clientCert == "" && *clientKey == "" {
 			cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-client", 365)
 		} else {
-			log.Fatalf("Error: both -cert and -key must be specified if one is provided")
+			slog.Error("Error: both -cert and -key must be specified if one is provided")
+			os.Exit(1)
 		}
 		if err != nil {
-			log.Fatalf("Error getting client cert: %v", err)
+			slog.Error("Error getting client cert", "error", err)
+			os.Exit(1)
 		}
 
 		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery); err != nil {
-			log.Fatalf("Client error: %v", err)
+			slog.Error("Client error", "error", err)
+			os.Exit(1)
 		}
 
 	default:
@@ -132,7 +267,7 @@ func loadOrGenerateCert(certPath, keyPath string) (tls.Certificate, error) {
 			return tls.LoadX509KeyPair(certPath, keyPath)
 		}
 	}
-	log.Printf("Generating new TLS certificate in %s and %s...", certPath, keyPath)
+	slog.Info("Generating new TLS certificate", "cert", certPath, "key", keyPath)
 	return tlsutil.NewCertificate(certPath, keyPath, "syncthing-socket", 3650)
 }
 
@@ -145,14 +280,14 @@ func announce(ctx context.Context, cert tls.Certificate, relayURI string, discov
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Failed to marshal announce payload: %v", err)
+		slog.Error("Failed to marshal announce payload", "error", err)
 		return
 	}
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: true, // handle self-signed certs on discovery servers
+			InsecureSkipVerify: true,
 		},
 	}
 	client := &http.Client{
@@ -166,21 +301,21 @@ func announce(ctx context.Context, cert tls.Certificate, relayURI string, discov
 			defer ticker.Stop()
 
 			for {
-				log.Printf("Announcing availability to %s...", ds)
+				slog.Debug("Announcing availability to discovery server", "ds", ds)
 				req, err := http.NewRequestWithContext(ctx, "POST", ds, strings.NewReader(string(body)))
 				if err != nil {
-					log.Printf("Announce: failed to create request for %s: %v", ds, err)
+					slog.Error("Failed to create announce request", "ds", ds, "error", err)
 				} else {
 					req.Header.Set("Content-Type", "application/json")
 					resp, err := client.Do(req)
 					if err != nil {
-						log.Printf("Announce to %s failed: %v", ds, err)
+						slog.Error("Announce request failed", "ds", ds, "error", err)
 					} else {
 						resp.Body.Close()
 						if resp.StatusCode == http.StatusNoContent {
-							log.Printf("Successfully announced to %s", ds)
+							slog.Info("Successfully announced availability", "ds", ds)
 						} else {
-							log.Printf("Announce to %s returned status %d", ds, resp.StatusCode)
+							slog.Warn("Announce returned non-204 status", "ds", ds, "status", resp.StatusCode)
 						}
 					}
 				}
@@ -203,7 +338,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // safe since we verify the server's identity end-to-end
+			InsecureSkipVerify: true,
 		},
 	}
 	client := &http.Client{
@@ -211,6 +346,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 		Timeout:   10 * time.Second,
 	}
 
+	slog.Debug("Looking up server address on discovery server", "ds", discoveryServer, "serverID", serverID)
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return "", err
@@ -239,6 +375,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) (strin
 
 	for _, addr := range lr.Addresses {
 		if strings.HasPrefix(addr, "relay://") {
+			slog.Debug("Resolved server address", "address", addr)
 			return addr, nil
 		}
 	}
@@ -256,7 +393,9 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	fmt.Println("==================================================")
 	fmt.Printf("Server Device ID: %s\n", serverID)
 	fmt.Println("==================================================")
+	slog.Info("Server Device ID computed", "id", serverID.String())
 
+	slog.Info("Relay client starting", "relay", u.String())
 	relayClient, err := client.NewClient(u, []tls.Certificate{cert}, 15*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to create relay client: %w", err)
@@ -266,7 +405,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 	go func() {
 		if err := relayClient.Serve(ctx); err != nil {
-			log.Printf("Relay client stopped: %v", err)
+			slog.Error("Relay client stopped", "error", err)
 		}
 	}()
 
@@ -293,10 +432,10 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	fmt.Printf("Or simply:\n")
 	fmt.Printf("  ./syncthing-socket client %s@%s\n", serverID.String(), connectedURI.String())
 	fmt.Println("==================================================")
+	slog.Info("Connected to relay", "uri", connectedURI.String())
 
 	systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
 
-	// Start background announcement
 	if len(discoveryServers) > 0 {
 		announce(ctx, cert, connectedURI.String(), discoveryServers)
 	}
@@ -308,10 +447,10 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			if !ok {
 				return fmt.Errorf("invitations channel closed")
 			}
-			log.Printf("Received invitation from relay. Joining session...")
+			slog.Info("Received invitation from relay, joining session")
 			conn, err := client.JoinSession(ctx, inv)
 			if err != nil {
-				log.Printf("Failed to join session: %v", err)
+				slog.Error("Failed to join session", "error", err)
 				continue
 			}
 
@@ -319,7 +458,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 				go handleForwardConn(conn, cert, forwardAddr)
 			} else {
 				handleServerConn(conn, cert)
-				return nil // exit after the first connection closes (netcat style)
+				return nil
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -337,7 +476,7 @@ func handleServerConn(conn net.Conn, cert tls.Certificate) {
 	}
 	tlsConn := tls.Server(conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
-		log.Printf("TLS handshake failed: %v", err)
+		slog.Error("TLS handshake failed", "error", err)
 		return
 	}
 	defer tlsConn.Close()
@@ -345,9 +484,9 @@ func handleServerConn(conn net.Conn, cert tls.Certificate) {
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) > 0 {
 		clientID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
-		log.Printf("Connection established with client: %s", clientID.String())
+		slog.Info("Connection established with client", "id", clientID.String())
 	} else {
-		log.Printf("Connection established with anonymous client")
+		slog.Info("Connection established with anonymous client")
 	}
 
 	pipeBiDirectional(tlsConn)
@@ -377,13 +516,13 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		return fmt.Errorf("invalid relay URI: %w", err)
 	}
 
-	log.Printf("Requesting session invitation from relay...")
+	slog.Info("Requesting session invitation from relay", "relay", u.String(), "serverID", serverID.String())
 	invitation, err := client.GetInvitationFromRelay(ctx, u, serverID, []tls.Certificate{cert}, 15*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to get invitation from relay: %w", err)
 	}
 
-	log.Printf("Joining relay session...")
+	slog.Info("Joining relay session")
 	conn, err := client.JoinSession(ctx, invitation)
 	if err != nil {
 		return fmt.Errorf("failed to join session: %w", err)
@@ -392,11 +531,12 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 
 	tlsConn := tls.Client(conn, &tls.Config{
 		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: true, // Manual verification using Device ID below
+		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS13,
 	})
 
 	if err := tlsConn.Handshake(); err != nil {
+		slog.Error("TLS handshake failed", "error", err)
 		return fmt.Errorf("TLS handshake failed: %w", err)
 	}
 	defer tlsConn.Close()
@@ -411,7 +551,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		return fmt.Errorf("security mismatch: connected to device %s, expected %s", peerID, serverID)
 	}
 
-	log.Printf("Connected successfully. Communication is now active:")
+	slog.Info("Connected successfully, tunnel active", "peerID", peerID.String())
 	pipeBiDirectional(tlsConn)
 	return nil
 }
@@ -420,18 +560,18 @@ func pipeBiDirectional(conn net.Conn) {
 	errChan := make(chan error, 2)
 
 	go func() {
-		_, err := io.Copy(os.Stdout, conn)
+		_, err := copyWithTrace(os.Stdout, conn, "remote->stdout")
 		errChan <- err
 	}()
 
 	go func() {
-		_, err := io.Copy(conn, os.Stdin)
+		_, err := copyWithTrace(conn, os.Stdin, "stdin->remote")
 		errChan <- err
 	}()
 
 	err := <-errChan
 	if err != nil && err != io.EOF {
-		log.Printf("Connection error: %v", err)
+		slog.Error("Connection error", "error", err)
 	}
 }
 
@@ -445,7 +585,7 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) 
 	}
 	tlsConn := tls.Server(conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
-		log.Printf("TLS handshake failed: %v", err)
+		slog.Error("TLS handshake failed", "error", err)
 		return
 	}
 	defer tlsConn.Close()
@@ -453,32 +593,68 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) > 0 {
 		clientID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
-		log.Printf("Connection established with client: %s -> forwarding to %s", clientID.String(), forwardAddr)
+		slog.Info("Connection established with client, forwarding", "id", clientID.String(), "target", forwardAddr)
 	} else {
-		log.Printf("Connection established with anonymous client -> forwarding to %s", forwardAddr)
+		slog.Info("Connection established with anonymous client, forwarding", "target", forwardAddr)
 	}
 
 	localConn, err := net.Dial("tcp", forwardAddr)
 	if err != nil {
-		log.Printf("Failed to connect to forward target %s: %v", forwardAddr, err)
+		slog.Error("Failed to connect to forward target", "target", forwardAddr, "error", err)
 		return
 	}
 	defer localConn.Close()
 
 	errChan := make(chan error, 2)
 	go func() {
-		_, err := io.Copy(localConn, tlsConn)
+		_, err := copyWithTrace(localConn, tlsConn, "remote->local")
 		errChan <- err
 	}()
 	go func() {
-		_, err := io.Copy(tlsConn, localConn)
+		_, err := copyWithTrace(tlsConn, localConn, "local->remote")
 		errChan <- err
 	}()
 
 	err = <-errChan
 	if err != nil && err != io.EOF {
-		log.Printf("Forward connection closed with error: %v", err)
+		slog.Error("Forward connection closed with error", "error", err)
 	}
+}
+
+func copyWithTrace(dst io.Writer, src io.Reader, direction string) (written int64, err error) {
+	buf := make([]byte, 32*1024)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			slog.Log(context.Background(), LevelTrace, "IO read", "direction", direction, "bytes", nr)
+			if isTraceEnabled() {
+				slog.Log(context.Background(), LevelTrace, "IO data", "direction", direction, "hex", fmt.Sprintf("%x", buf[:nr]))
+			}
+			nw, ew := dst.Write(buf[0:nr])
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = io.ErrShortWrite
+				}
+			}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			if er != io.EOF {
+				err = er
+			}
+			break
+		}
+	}
+	return written, err
 }
 
 func systemdNotify(state string) {
