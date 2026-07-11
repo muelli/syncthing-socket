@@ -1,0 +1,9 @@
+# Compiled binary
+syncthing-socket
+
+# TLS certificates
+cert.pem
+key.pem
+
+# Local Go installation
+local/

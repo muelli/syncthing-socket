@@ -1,0 +1,93 @@
+# Syncthing Socket
+
+A netcat-like client/server utility that allows two endpoints to communicate bi-directionally even when both are behind a NAT, leveraging the public **Syncthing Relay Network** and **Global Discovery Directory**.
+
+## Key Features
+- **NAT Traversal:** Leverages Syncthing's public relay network for connectivity.
+- **End-to-End Encryption:** Automatically establishes a secure end-to-end tunnel using **TLS 1.3**.
+- **Cryptographic Device Verification:** Identifies and authenticates endpoints by hashing their TLS certificates to generate unique Syncthing **Device IDs**, preventing man-in-the-middle attacks.
+- **Global Discovery:** Server registers itself dynamically in the Syncthing global announce directory (`discovery.syncthing.net`), allowing clients to look up and connect to the server using only its Device ID.
+- **Netcat-style:** Pipes standard input (`stdin`) and standard output (`stdout`) bi-directionally between endpoints.
+
+---
+
+## Compilation
+
+You can build the binary using:
+
+```bash
+go build -o syncthing-socket main.go
+```
+
+---
+
+## Usage
+
+### 1. Start the Server
+Start the server listening on the Syncthing relay network. By default, it will dynamically choose a low-latency public relay from the pool, print the connection string, and announce itself to the Syncthing Global Discovery servers:
+
+```bash
+./syncthing-socket server
+```
+
+Example Output:
+```text
+==================================================
+Server Device ID: YGOV2KW-QIGHJYZ-BCA52RN-7EQTGY3-CQGARMC-3JVUWAA-BXHSKI5-ZRJSBQT
+==================================================
+Connected to Relay: relay://195.22.153.71:22067/?id=SPXEVID...
+To connect, run:
+  ./syncthing-socket client -relay "relay://195.22.153.71:22067/?id=SPXEVID..." YGOV2KW-QIGHJYZ-BCA52RN-7EQTGY3-CQGARMC-3JVUWAA-BXHSKI5-ZRJSBQT
+Or simply:
+  ./syncthing-socket client YGOV2KW-QIGHJYZ-BCA52RN-7EQTGY3-CQGARMC-3JVUWAA-BXHSKI5-ZRJSBQT@relay://195.22.153.71:22067/?id=SPXEVID...
+==================================================
+2026/07/11 13:16:33 Announcing availability to https://discovery-announce-v4.syncthing.net/v2/?nolookup...
+2026/07/11 13:16:33 Successfully announced to https://discovery-announce-v4.syncthing.net/v2/?nolookup
+```
+
+#### Server Options:
+- `-cert <path>`: Custom TLS certificate path (default: `cert.pem`).
+- `-key <path>`: Custom TLS key path (default: `key.pem`).
+- `-relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
+- `-discovery <urls>`: Comma-separated list of global announce directories.
+
+---
+
+### 2. Connect with the Client
+
+You can connect to the server in three ways:
+
+#### Option A: Dynamic Discovery Lookup (Recommended)
+If you only know the Server's Device ID, the client will automatically query the global directory, resolve which relay the server is currently on, and connect to it:
+
+```bash
+./syncthing-socket client <SERVER_DEVICE_ID>
+```
+
+#### Option B: Combined Connection String
+Connect directly using the connection string printed by the server:
+
+```bash
+./syncthing-socket client <SERVER_DEVICE_ID>@<RELAY_URI>
+```
+
+#### Option C: Bypassing Discovery via Flags
+Specify the relay address manually via the `-relay` flag:
+
+```bash
+./syncthing-socket client -relay "<RELAY_URI>" <SERVER_DEVICE_ID>
+```
+
+#### Client Options:
+- `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
+- `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
+
+---
+
+## Security Model
+
+1. **Relay Blindness:** The relay server acts purely as a TCP proxy. It cannot decrypt or read any data sent through it.
+2. **E2E TLS 1.3:** Once the relay session is joined by both client and server, they negotiate a direct TLS 1.3 handshake.
+3. **Peer Verification:** 
+   - The Client extracts the leaf certificate from the TLS handshake, hashes it to generate the server's Device ID, and compares it against the expected `<SERVER_DEVICE_ID>`. The connection is terminated immediately if they do not match.
+   - The Server requests the client's certificate to verify and log the client's Device ID.
