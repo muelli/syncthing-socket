@@ -84,6 +84,41 @@ Specify the relay address manually via the `-relay` flag:
 
 ---
 
+## Advanced: SSH Port Forwarding
+
+You can front your local SSH daemon (or any other TCP service) using `syncthing-socket`. This allows you to securely SSH into a machine behind a NAT.
+
+### 1. On the Server (SSH Host)
+Start the server with the `-forward` option pointing to your SSH port (usually `127.0.0.1:22`). You should also specify `-cert` and `-key` so that your server keeps a persistent Device ID:
+
+```bash
+./syncthing-socket server -cert cert.pem -key key.pem -forward 127.0.0.1:22
+```
+
+The server will print its Device ID (e.g. `SERVER_DEVICE_ID`). It runs as a persistent daemon and forwards incoming connections to the local SSH port in separate goroutines, handling multiple concurrent sessions.
+
+### 2. On the Client
+On the client machine, connect using standard SSH with the `-o ProxyCommand` flag:
+
+```bash
+ssh -o ProxyCommand="./syncthing-socket client <SERVER_DEVICE_ID>" user@ignored_host
+```
+
+Alternatively, add an entry to your local `~/.ssh/config` file:
+
+```text
+Host my-nat-server
+    User your_username
+    ProxyCommand /path/to/syncthing-socket client <SERVER_DEVICE_ID>
+```
+
+Then connect simply by running:
+```bash
+ssh my-nat-server
+```
+
+---
+
 ## Security Model
 
 1. **Relay Blindness:** The relay server acts purely as a TCP proxy. It cannot decrypt or read any data sent through it.
