@@ -3,6 +3,8 @@ module syncthing-socket
 go 1.24.0
 
 require (
+	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
+	github.com/hashicorp/yamux v0.1.2
 	github.com/pion/webrtc/v4 v4.2.17
 	github.com/syncthing/syncthing v1.30.0
 )
