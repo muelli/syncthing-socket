@@ -3,7 +3,7 @@
 A netcat-like client/server utility that allows two endpoints to communicate bi-directionally even when both are behind a NAT, leveraging the public **Syncthing Relay Network** and **Global Discovery Directory**.
 
 ## Key Features
-- **NAT Traversal:** Leverages Syncthing's public relay network for connectivity.
+- **P2P NAT Traversal:** Automatically attempts to punch holes through NATs using WebRTC **ICE** DataChannels. Seamlessly falls back to Syncthing's global public relay network if a direct connection is impossible.
 - **End-to-End Encryption:** Automatically establishes a secure end-to-end tunnel using **TLS 1.3**.
 - **Cryptographic Device Verification:** Identifies and authenticates endpoints by hashing their TLS certificates to generate unique Syncthing **Device IDs**, preventing man-in-the-middle attacks.
 - **Global Discovery:** Server registers itself dynamically in the Syncthing global announce directory (`discovery.syncthing.net`), allowing clients to look up and connect to the server using only its Device ID.
@@ -84,7 +84,7 @@ Specify the relay address manually via the `-relay` flag:
 #### Client Options:
 - `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
 - `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
-- `-direct`: Try direct TCP connections before falling back to relay. Set `-direct=false` to disable direct attempts and force relay connections (default: true).
+- `-direct`: Attempt direct P2P connections via WebRTC ICE (UDP NAT Hole Punching) and direct TCP before seamlessly falling back to relay. Set `-direct=false` to disable ICE and force relay connections (default: true).
 - `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 

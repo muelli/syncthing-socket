@@ -468,7 +468,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						return
 					}
 					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
-					go handleForwardConn(conn, cert, forwardAddr)
+					go handleForwardConn(conn, cert, forwardAddr, false)
 				}
 			}()
 		}
@@ -486,14 +486,18 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 					slog.Error("Failed to join session", "error", err)
 					continue
 				}
-				go handleForwardConn(conn, cert, forwardAddr)
+				go handleForwardConn(conn, cert, forwardAddr, true)
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		}
 	} else {
 		// Simple Netcat Mode: accept exactly one connection and exit
-		connChan := make(chan net.Conn, 1)
+		type connInfo struct {
+			conn    net.Conn
+			isRelay bool
+		}
+		connChan := make(chan connInfo, 1)
 
 		if directPort > 0 {
 			go func() {
@@ -502,7 +506,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 					return
 				}
 				select {
-				case connChan <- conn:
+				case connChan <- connInfo{conn, false}:
 					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
 				default:
 					conn.Close()
@@ -525,7 +529,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						continue
 					}
 					select {
-					case connChan <- conn:
+					case connChan <- connInfo{conn, true}:
 						return
 					default:
 						conn.Close()
@@ -537,8 +541,8 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		}()
 
 		select {
-		case conn := <-connChan:
-			handleServerConn(conn, cert)
+		case info := <-connChan:
+			handleServerConn(info.conn, cert, info.isRelay)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -546,7 +550,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -559,7 +563,6 @@ func handleServerConn(conn net.Conn, cert tls.Certificate) {
 		slog.Error("TLS handshake failed", "error", err)
 		return
 	}
-	defer tlsConn.Close()
 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) > 0 {
@@ -569,7 +572,22 @@ func handleServerConn(conn net.Conn, cert tls.Certificate) {
 		slog.Info("Connection established with anonymous client")
 	}
 
-	pipeBiDirectional(tlsConn)
+	if isRelay {
+		p2pConn, fallback, err := negotiateWebRTCServer(context.Background(), tlsConn)
+		if fallback || err != nil {
+			slog.Info("Using relay connection for data (ICE bypassed or failed)", "error", err)
+			defer tlsConn.Close()
+			pipeBiDirectional(tlsConn)
+			return
+		}
+		slog.Info("Direct P2P ICE connection established! Closing relay.")
+		tlsConn.Close()
+		defer p2pConn.Close()
+		pipeBiDirectional(p2pConn)
+	} else {
+		defer tlsConn.Close()
+		pipeBiDirectional(tlsConn)
+	}
 }
 
 func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool) error {
@@ -682,20 +700,42 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		slog.Error("TLS handshake failed", "error", err)
 		return fmt.Errorf("TLS handshake failed: %w", err)
 	}
-	defer tlsConn.Close()
 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
+		tlsConn.Close()
 		return fmt.Errorf("server presented no TLS certificates")
 	}
 
 	peerID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
 	if peerID != serverID {
+		tlsConn.Close()
 		return fmt.Errorf("security mismatch: connected to device %s, expected %s", peerID, serverID)
 	}
 
-	slog.Info("Connected successfully via relay, tunnel active", "peerID", peerID.String())
-	pipeBiDirectional(tlsConn)
+	slog.Info("Connected successfully via relay", "peerID", peerID.String())
+	
+	if !tryDirect {
+		slog.Info("Relay-only mode requested. Bypassing ICE.")
+		defer tlsConn.Close()
+		pipeBiDirectional(tlsConn)
+		return nil
+	}
+
+	slog.Info("Starting ICE/WebRTC negotiation via relay signaling...")
+	p2pConn, err := negotiateWebRTCClient(ctx, tlsConn)
+	if err != nil {
+		slog.Warn("ICE negotiation failed, falling back to relay", "error", err)
+		sendSignal(tlsConn, SignalMessage{Type: "fallback"})
+		defer tlsConn.Close()
+		pipeBiDirectional(tlsConn)
+		return nil
+	}
+
+	slog.Info("Direct P2P ICE connection established! Closing relay.")
+	tlsConn.Close()
+	defer p2pConn.Close()
+	pipeBiDirectional(p2pConn)
 	return nil
 }
 
@@ -718,7 +758,7 @@ func pipeBiDirectional(conn net.Conn) {
 	}
 }
 
-func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) {
+func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -731,7 +771,6 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) 
 		slog.Error("TLS handshake failed", "error", err)
 		return
 	}
-	defer tlsConn.Close()
 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) > 0 {
@@ -741,26 +780,51 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string) 
 		slog.Info("Connection established with anonymous client, forwarding", "target", forwardAddr)
 	}
 
+	var dataConn net.Conn
+	if isRelay {
+		p2pConn, fallback, err := negotiateWebRTCServer(context.Background(), tlsConn)
+		if fallback || err != nil {
+			slog.Info("Using relay connection for data (ICE bypassed or failed)", "error", err)
+			dataConn = tlsConn
+		} else {
+			slog.Info("Direct P2P ICE connection established! Closing relay.")
+			tlsConn.Close()
+			dataConn = p2pConn
+		}
+	} else {
+		dataConn = tlsConn
+	}
+
 	localConn, err := net.Dial("tcp", forwardAddr)
 	if err != nil {
 		slog.Error("Failed to connect to forward target", "target", forwardAddr, "error", err)
+		if dataConn != tlsConn {
+			dataConn.Close()
+		} else {
+			tlsConn.Close()
+		}
 		return
 	}
 	defer localConn.Close()
 
 	errChan := make(chan error, 2)
 	go func() {
-		_, err := copyWithTrace(localConn, tlsConn, "remote->local")
+		_, err := copyWithTrace(localConn, dataConn, "remote->local")
 		errChan <- err
 	}()
 	go func() {
-		_, err := copyWithTrace(tlsConn, localConn, "local->remote")
+		_, err := copyWithTrace(dataConn, localConn, "local->remote")
 		errChan <- err
 	}()
 
 	err = <-errChan
 	if err != nil && err != io.EOF {
 		slog.Error("Forward connection closed with error", "error", err)
+	}
+	if dataConn != tlsConn {
+		dataConn.Close()
+	} else {
+		tlsConn.Close()
 	}
 }
 
