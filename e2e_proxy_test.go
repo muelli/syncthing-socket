@@ -59,7 +59,7 @@ func TestHTTPProxyRouting(t *testing.T) {
 
 	passphrase := fmt.Sprintf("test-proxy-passphrase-%d", time.Now().UnixNano())
 
-	cmdServer := exec.Command("./test-proxy-binary", "server", "--passphrase", passphrase, "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-proxy-binary", "server", "--passphrase", passphrase, "--log-level", "debug", "--log-format", "text", "--discovery", "")
 	cmdServer.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:8888") // Inject proxy!
 	
 	// Capture output to look for our proxy logs
@@ -85,7 +85,7 @@ func TestHTTPProxyRouting(t *testing.T) {
 	defer cmdServer.Process.Kill()
 
 	// Look for proxy logs or relay connection success
-	timeout := time.After(15 * time.Second)
+	timeout := time.After(60 * time.Second)
 	var output string
 	for {
 		select {

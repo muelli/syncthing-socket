@@ -21,7 +21,7 @@ func TestShellP2P(t *testing.T) {
 	defer os.Remove(testFile)
 
 	// Start server in shell mode
-	cmdServer := exec.Command("./test-shell-binary", "server", "--passphrase", passphrase, "--shell", "--direct-port", "22002", "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-shell-binary", "server", "--passphrase", passphrase, "--shell", "--direct-port", "22002", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -33,7 +33,7 @@ func TestShellP2P(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Start client in shell mode, explicitly passing the direct TCP URI
-	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:22002", "--shell", "--log-level", "debug", "--log-format", "text")
+	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--shell", "--relay", "tcp://127.0.0.1:22002", "--discovery", "", "--log-level", "debug", "--log-format", "text")
 	
 	// Inject mock command into client's stdin, using a pipe so it doesn't instantly EOF
 	stdinRead, stdinWrite := io.Pipe()
