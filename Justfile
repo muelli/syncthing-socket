@@ -8,3 +8,7 @@ build:
 # Run the test suite
 test:
     {{GO}} test -v ./...
+
+# Simulate GitHub CI locally using act and podman
+ci:
+    DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock ~/.local/bin/act
