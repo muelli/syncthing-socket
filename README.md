@@ -133,6 +133,20 @@ echo "log data with error" | ./syncthing-socket client -passphrase "my-secret"
 
 ---
 
+## Utility: Deterministic Device IDs
+
+If you are using the `-passphrase` flag instead of explicit TLS certificates, `syncthing-socket` mathematically derives unique cryptographic keys from your secret phrase. To prevent reflection attacks (where a malicious actor routes your client back to itself), the client and server intentionally use different cryptographic suffixes during derivation.
+
+If you are curious what your Syncthing Device IDs will be for a given passphrase, you can use the `id` subcommand:
+
+```bash
+$ ./syncthing-socket id -passphrase "my-secret"
+Server ID: DJOJMPR-MCPBCMH-GVVOJEX-HXWI7JU-L7OSTDV-TBD4ZJP-YSOFXQZ-PPFV5QD
+Client ID: F34H6S5-62G6AIP-2G3VHTB-I5D35S6-6T4K5E6-RFL52E4-37C5T3S-7FLHFAQ
+```
+
+---
+
 ## Advanced: SSH Port Forwarding
 
 You can front your local SSH daemon (or any other TCP service) using `syncthing-socket`. This allows you to securely SSH into a machine behind a NAT.

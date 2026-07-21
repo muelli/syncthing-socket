@@ -57,6 +57,9 @@ func main() {
 	clientLogLevel := clientCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientLogFormat := clientCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
 
+	idCmd := flag.NewFlagSet("id", flag.ExitOnError)
+	idPassphrase := idCmd.String("passphrase", "", "Passphrase to compute the Syncthing ID for")
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -175,6 +178,31 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "id":
+		idCmd.Parse(os.Args[2:])
+		if *idPassphrase == "" {
+			fmt.Println("Error: -passphrase is required")
+			os.Exit(1)
+		}
+		
+		serverCert, err := generateDeterministicCert(*idPassphrase + "server")
+		if err != nil {
+			fmt.Println("Error generating server cert:", err)
+			os.Exit(1)
+		}
+		serverID := syncthingprotocol.NewDeviceID(serverCert.Certificate[0])
+		
+		clientCert, err := generateDeterministicCert(*idPassphrase + "client")
+		if err != nil {
+			fmt.Println("Error generating client cert:", err)
+			os.Exit(1)
+		}
+		clientID := syncthingprotocol.NewDeviceID(clientCert.Certificate[0])
+		
+		fmt.Printf("Server ID: %s\n", serverID.String())
+		fmt.Printf("Client ID: %s\n", clientID.String())
+		os.Exit(0)
+
 	default:
 		printUsage()
 		os.Exit(1)
@@ -186,6 +214,7 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  server    Start the listening server")
 	fmt.Println("  client    Connect to a server")
+	fmt.Println("  id        Compute Device IDs from a passphrase")
 	fmt.Println("Run 'syncthing-socket <command> -h' for options.")
 }
 
