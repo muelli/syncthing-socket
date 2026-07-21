@@ -1,6 +1,6 @@
 # Build the project
 build:
-    go build -o syncthing-socket .
+    go build -ldflags "-X main.Version=$(git rev-list --count HEAD)" -o syncthing-socket .
 
 # Run the test suite
 test:

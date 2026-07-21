@@ -24,6 +24,8 @@ import (
 
 // Logging setup is in logging.go
 
+var Version = "dev"
+
 func isTraceEnabled() bool {
 	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
 }
@@ -63,6 +65,11 @@ func main() {
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
+	}
+
+	if os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version" {
+		fmt.Printf("syncthing-socket version %s\n", Version)
+		os.Exit(0)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
