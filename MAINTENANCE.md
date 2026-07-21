@@ -48,3 +48,20 @@ Run the test suite to ensure the upstream changes didn't break the P2P tunnels o
 git add go.mod go.sum vendor/
 git commit -m "chore: update dependencies"
 ```
+
+## Simulating GitHub CI Locally
+
+You can test the GitHub Actions build pipeline (`.github/workflows/build.yml`) locally without pushing commits by using [`act`](https://nektosact.com/).
+
+Since this project uses `podman`, ensure your user socket is running and configure `act` to use it:
+
+```bash
+# Ensure the rootless podman socket is active
+systemctl --user enable --now podman.socket
+
+# Export DOCKER_HOST so act uses podman
+export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+
+# Run the CI pipeline locally
+~/.local/bin/act
+```

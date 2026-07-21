@@ -9,8 +9,8 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 
-	"github.com/creack/pty"
 	"github.com/hashicorp/yamux"
 	"golang.org/x/term"
 )
@@ -18,6 +18,14 @@ import (
 type winsize struct {
 	Rows uint16 `json:"rows"`
 	Cols uint16 `json:"cols"`
+}
+
+type ShellSession interface {
+	Read(p []byte) (n int, err error)
+	Write(p []byte) (n int, err error)
+	Close() error
+	Wait() error
+	Resize(rows, cols uint16) error
 }
 
 func runShellServer(conn net.Conn) {
@@ -40,18 +48,12 @@ func runShellServer(conn net.Conn) {
 		return
 	}
 
-	shellPath := os.Getenv("SHELL")
-	if shellPath == "" {
-		shellPath = "/bin/sh"
-	}
-
-	cmd := exec.Command(shellPath)
-	ptmx, err := pty.Start(cmd)
+	shellSession, err := spawnShell()
 	if err != nil {
-		slog.Error("Failed to start PTY", "error", err)
+		slog.Error("Failed to start shell", "error", err)
 		return
 	}
-	defer ptmx.Close()
+	defer shellSession.Close()
 
 	// Listen for remote resize commands
 	go func() {
@@ -59,17 +61,17 @@ func runShellServer(conn net.Conn) {
 		for scanner.Scan() {
 			var size winsize
 			if err := json.Unmarshal(scanner.Bytes(), &size); err == nil {
-				pty.Setsize(ptmx, &pty.Winsize{Rows: size.Rows, Cols: size.Cols})
+				shellSession.Resize(size.Rows, size.Cols)
 			}
 		}
 	}()
 
 	go func() {
-		CopyWithTrace(ptmx, dataStream, "remote->pty")
+		CopyWithTrace(shellSession, dataStream, "remote->pty")
 	}()
-	CopyWithTrace(dataStream, ptmx, "pty->remote")
+	CopyWithTrace(dataStream, shellSession, "pty->remote")
 
-	cmd.Wait()
+	shellSession.Wait()
 }
 
 func runShellClient(ctx context.Context, p2pConn net.Conn) {
@@ -118,7 +120,12 @@ func runShellClient(ctx context.Context, p2pConn net.Conn) {
 func runCommandServer(conn net.Conn, commandStr string) {
 	slog.Info("Starting command execution server", "command", commandStr)
 
-	cmd := exec.Command("/bin/sh", "-c", commandStr)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd.exe", "/c", commandStr)
+	} else {
+		cmd = exec.Command("/bin/sh", "-c", commandStr)
+	}
 	
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
