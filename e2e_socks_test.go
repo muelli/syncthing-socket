@@ -28,7 +28,7 @@ func TestSocksProxyE2E(t *testing.T) {
 	passphrase := fmt.Sprintf("test-socks-e2e-passphrase-%d", time.Now().UnixNano())
 	
 	// 2. Start server
-	cmdServer := exec.Command("./test-syncthing-socket", "server", "-passphrase", passphrase, "-socks", "-log-level", "debug")
+	cmdServer := exec.Command("./test-syncthing-socket", "server", "-passphrase", passphrase, "-socks", "-log-level", "debug", "-log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -40,7 +40,7 @@ func TestSocksProxyE2E(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// 3. Start client (notice we don't need the Server ID positional argument because of the passphrase!)
-	cmdClient := exec.Command("./test-syncthing-socket", "client", "-passphrase", passphrase, "-socks", "127.0.0.1:10800", "-log-level", "debug")
+	cmdClient := exec.Command("./test-syncthing-socket", "client", "-passphrase", passphrase, "-socks", "127.0.0.1:10800", "-log-level", "debug", "-log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 	if err := cmdClient.Start(); err != nil {
@@ -48,29 +48,39 @@ func TestSocksProxyE2E(t *testing.T) {
 	}
 	defer cmdClient.Process.Kill()
 
-	// Wait for client to connect, negotiate ICE/Relay, and start SOCKS proxy
-	time.Sleep(10 * time.Second)
-
-	// 4. Test SOCKS proxy
+	// 4. Test SOCKS proxy via a retry loop (since WebRTC STUN/TURN negotiation timing is variable)
 	proxyURL, _ := url.Parse("socks5://127.0.0.1:10800")
 	transport := &http.Transport{
 		Proxy: http.ProxyURL(proxyURL),
 	}
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   10 * time.Second,
+		Timeout:   2 * time.Second,
 	}
 
-	resp, err := client.Get("http://127.0.0.1:9090/test")
-	if err != nil {
-		t.Fatalf("Failed to make request via SOCKS proxy: %v", err)
-	}
-	defer resp.Body.Close()
+	deadline := time.Now().Add(30 * time.Second)
+	success := false
+	var lastErr error
+	var respBody []byte
 
-	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), "Hello via SOCKS!") {
-		t.Logf("Successfully routed traffic through SOCKS5 multiplexed P2P tunnel!")
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://127.0.0.1:9090/test")
+		if err == nil {
+			respBody, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if strings.Contains(string(respBody), "Hello via SOCKS!") {
+				success = true
+				break
+			}
+		} else {
+			lastErr = err
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !success {
+		t.Fatalf("Failed to make request via SOCKS proxy after 30s. Last error: %v, Body: %s", lastErr, string(respBody))
 	} else {
-		t.Errorf("Unexpected response: %s", string(body))
+		t.Logf("Successfully routed traffic through SOCKS5 multiplexed P2P tunnel!")
 	}
 }
