@@ -22,123 +22,7 @@ import (
 	"github.com/syncthing/syncthing/lib/tlsutil"
 )
 
-const LevelTrace = slog.Level(-8)
-
-type CustomHandler struct {
-	format string
-	level  slog.Level
-}
-
-func (h *CustomHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.level
-}
-
-func (h *CustomHandler) Handle(ctx context.Context, r slog.Record) error {
-	var buf strings.Builder
-
-	if h.format == "journald" {
-		var prefix string
-		switch {
-		case r.Level <= LevelTrace:
-			prefix = "<7>" // Debug/Trace priority
-		case r.Level < slog.LevelInfo:
-			prefix = "<7>" // Debug priority
-		case r.Level < slog.LevelWarn:
-			prefix = "<6>" // Info priority
-		case r.Level < slog.LevelError:
-			prefix = "<4>" // Warning priority
-		default:
-			prefix = "<3>" // Error priority
-		}
-		buf.WriteString(prefix)
-	}
-
-	// Output time only in non-journald text logs
-	if h.format != "journald" {
-		buf.WriteString(r.Time.Format("2006-01-02 15:04:05.000"))
-		buf.WriteString(" ")
-	}
-
-	levelStr := r.Level.String()
-	if r.Level <= LevelTrace {
-		levelStr = "TRACE"
-	}
-	buf.WriteString("[")
-	buf.WriteString(levelStr)
-	buf.WriteString("] ")
-
-	buf.WriteString(r.Message)
-
-	r.Attrs(func(a slog.Attr) bool {
-		buf.WriteString(fmt.Sprintf(" %s=%v", a.Key, a.Value.Any()))
-		return true
-	})
-
-	buf.WriteString("\n")
-	_, err := os.Stderr.WriteString(buf.String())
-	return err
-}
-
-func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return h
-}
-
-func (h *CustomHandler) WithGroup(name string) slog.Handler {
-	return h
-}
-
-func setupLogging(levelStr, formatStr string) {
-	var level slog.Level
-	switch strings.ToLower(levelStr) {
-	case "trace":
-		level = LevelTrace
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-
-	if formatStr == "auto" {
-		formatStr = defaultLogFormat()
-	}
-
-	var handler slog.Handler
-	if strings.ToLower(formatStr) == "json" {
-		opts := &slog.HandlerOptions{
-			Level: level,
-			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == slog.LevelKey {
-					l := a.Value.Any().(slog.Level)
-					if l <= LevelTrace {
-						return slog.String(slog.LevelKey, "TRACE")
-					}
-				}
-				return a
-			},
-		}
-		handler = slog.NewJSONHandler(os.Stderr, opts)
-	} else {
-		handler = &CustomHandler{
-			format: strings.ToLower(formatStr),
-			level:  level,
-		}
-	}
-
-	slog.SetDefault(slog.New(handler))
-}
-
-func defaultLogFormat() string {
-	if os.Getenv("INVOCATION_ID") != "" || os.Getenv("JOURNAL_STREAM") != "" {
-		return "journald"
-	}
-	return "text"
-}
+// Logging setup is in logging.go
 
 func isTraceEnabled() bool {
 	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
@@ -649,7 +533,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	if relayURIOverride != "" {
 		addresses = []string{relayURIOverride}
 	} else {
-		fmt.Println("Looking up server address on discovery server...")
+		slog.Info("Looking up server address on discovery server...")
 		var err error
 		addresses, err = lookup(ctx, serverID.String(), discoveryServer)
 		if err != nil {
@@ -800,12 +684,12 @@ func pipeBiDirectional(conn net.Conn) {
 	errChan := make(chan error, 2)
 
 	go func() {
-		_, err := copyWithTrace(os.Stdout, conn, "remote->stdout")
+		_, err := CopyWithTrace(os.Stdout, conn, "remote->stdout")
 		errChan <- err
 	}()
 
 	go func() {
-		_, err := copyWithTrace(conn, os.Stdin, "stdin->remote")
+		_, err := CopyWithTrace(conn, os.Stdin, "stdin->remote")
 		errChan <- err
 	}()
 
@@ -866,11 +750,11 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 
 	errChan := make(chan error, 2)
 	go func() {
-		_, err := copyWithTrace(localConn, dataConn, "remote->local")
+		_, err := CopyWithTrace(localConn, dataConn, "remote->local")
 		errChan <- err
 	}()
 	go func() {
-		_, err := copyWithTrace(dataConn, localConn, "local->remote")
+		_, err := CopyWithTrace(dataConn, localConn, "local->remote")
 		errChan <- err
 	}()
 
@@ -885,41 +769,7 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 	}
 }
 
-func copyWithTrace(dst io.Writer, src io.Reader, direction string) (written int64, err error) {
-	buf := make([]byte, 32*1024)
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			slog.Log(context.Background(), LevelTrace, "IO read", "direction", direction, "bytes", nr)
-			if isTraceEnabled() {
-				slog.Log(context.Background(), LevelTrace, "IO data", "direction", direction, "hex", fmt.Sprintf("%x", buf[:nr]))
-			}
-			nw, ew := dst.Write(buf[0:nr])
-			if nw < 0 || nr < nw {
-				nw = 0
-				if ew == nil {
-					ew = io.ErrShortWrite
-				}
-			}
-			written += int64(nw)
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
-}
+
 
 func systemdNotify(state string) {
 	socketPath := os.Getenv("NOTIFY_SOCKET")

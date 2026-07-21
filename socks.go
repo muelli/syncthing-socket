@@ -13,11 +13,11 @@ import (
 func pipeConns(conn1, conn2 net.Conn) {
 	errChan := make(chan error, 2)
 	go func() {
-		_, err := copyWithTrace(conn1, conn2, "stream->local")
+		_, err := CopyWithTrace(conn1, conn2, "stream->local")
 		errChan <- err
 	}()
 	go func() {
-		_, err := copyWithTrace(conn2, conn1, "local->stream")
+		_, err := CopyWithTrace(conn2, conn1, "local->stream")
 		errChan <- err
 	}()
 	err := <-errChan

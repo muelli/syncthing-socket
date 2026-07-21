@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -68,9 +67,9 @@ func runShellServer(conn net.Conn) {
 	}()
 
 	go func() {
-		io.Copy(ptmx, dataStream)
+		CopyWithTrace(ptmx, dataStream, "remote->pty")
 	}()
-	io.Copy(dataStream, ptmx)
+	CopyWithTrace(dataStream, ptmx, "pty->remote")
 
 	cmd.Wait()
 }
@@ -126,7 +125,7 @@ func runShellClient(ctx context.Context, p2pConn net.Conn) {
 	}()
 
 	go func() {
-		io.Copy(dataStream, os.Stdin)
+		CopyWithTrace(dataStream, os.Stdin, "stdin->remote")
 	}()
-	io.Copy(os.Stdout, dataStream)
+	CopyWithTrace(os.Stdout, dataStream, "remote->stdout")
 }
