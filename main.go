@@ -626,7 +626,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 			}
 
 			slog.Info("Connected directly (bypassing relay)", "address", addrStr)
-			pipeBiDirectional(tlsConn)
+			handleClientConn(ctx, tlsConn, localSocks, isShell)
 			return nil
 		}
 		slog.Info("All direct TCP connections failed, falling back to relay...")
@@ -680,20 +680,9 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 
 	slog.Info("Connected successfully via relay", "peerID", peerID.String())
 	
-	handleConn := func(finalConn net.Conn) {
-		if localSocks != "" {
-			runSocksClient(ctx, finalConn, localSocks)
-		} else if isShell {
-			runShellClient(ctx, finalConn)
-		} else {
-			defer finalConn.Close()
-			pipeBiDirectional(finalConn)
-		}
-	}
-
 	if !tryDirect {
 		slog.Info("Relay-only mode requested. Bypassing ICE.")
-		handleConn(tlsConn)
+		handleClientConn(ctx, tlsConn, localSocks, isShell)
 		return nil
 	}
 
@@ -702,14 +691,25 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	if err != nil {
 		slog.Warn("ICE negotiation failed, falling back to relay", "error", err)
 		sendSignal(tlsConn, SignalMessage{Type: "fallback"})
-		handleConn(tlsConn)
+		handleClientConn(ctx, tlsConn, localSocks, isShell)
 		return nil
 	}
 
 	slog.Info("Direct P2P ICE connection established! Closing relay.")
 	tlsConn.Close()
-	handleConn(p2pConn)
+	handleClientConn(ctx, p2pConn, localSocks, isShell)
 	return nil
+}
+
+func handleClientConn(ctx context.Context, finalConn net.Conn, localSocks string, isShell bool) {
+	if localSocks != "" {
+		runSocksClient(ctx, finalConn, localSocks)
+	} else if isShell {
+		runShellClient(ctx, finalConn)
+	} else {
+		defer finalConn.Close()
+		pipeBiDirectional(finalConn)
+	}
 }
 
 func pipeBiDirectional(conn net.Conn) {
