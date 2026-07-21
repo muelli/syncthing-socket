@@ -9,8 +9,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/hashicorp/yamux"
@@ -109,20 +107,7 @@ func runShellClient(ctx context.Context, p2pConn net.Conn) {
 	}
 
 	// Handle Terminal Resizes
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGWINCH)
-		for {
-			select {
-			case <-sigChan:
-				if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-					fmt.Fprintf(controlStream, `{"cols": %d, "rows": %d}`+"\n", width, height)
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go handleTerminalResize(ctx, controlStream)
 
 	go func() {
 		CopyWithTrace(dataStream, os.Stdin, "stdin->remote")
