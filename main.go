@@ -398,11 +398,18 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		}
 	}
 
+	extraFlags := ""
+	if isShell {
+		extraFlags = " --shell"
+	} else if isSocks {
+		extraFlags = " --socks 127.0.0.1:1080"
+	}
+
 	fmt.Printf("Connected to Relay: %s\n", connectedURI.String())
 	fmt.Printf("To connect, run:\n")
-	fmt.Printf("  ./syncthing-socket client -relay %q %s\n", connectedURI.String(), serverID.String())
+	fmt.Printf("  ./syncthing-socket client%s -relay %q %s\n", extraFlags, connectedURI.String(), serverID.String())
 	fmt.Printf("Or simply:\n")
-	fmt.Printf("  ./syncthing-socket client %s@%s\n", serverID.String(), connectedURI.String())
+	fmt.Printf("  ./syncthing-socket client%s %s@%s\n", extraFlags, serverID.String(), connectedURI.String())
 	fmt.Println("==================================================")
 	slog.Info("Connected to relay", "uri", connectedURI.String())
 
