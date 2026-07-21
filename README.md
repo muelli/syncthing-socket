@@ -7,6 +7,8 @@ A netcat-like client/server utility that allows two endpoints to communicate bi-
 - **End-to-End Encryption:** Automatically establishes a secure end-to-end tunnel using **TLS 1.3**.
 - **Cryptographic Device Verification:** Identifies and authenticates endpoints by hashing their TLS certificates to generate unique Syncthing **Device IDs**, preventing man-in-the-middle attacks.
 - **Global Discovery:** Server registers itself dynamically in the Syncthing global announce directory (`discovery.syncthing.net`), allowing clients to look up and connect to the server using only its Device ID.
+- **Interactive Shell:** Built-in pseudo-terminal (PTY) shell mode (`-shell`) natively replaces SSH, perfectly forwarding terminal sizes for interactive tools like `vim` or `htop`.
+- **SOCKS5 Proxy:** Built-in multiplexed remote SOCKS proxy (`-socks`).
 - **Netcat-style:** Pipes standard input (`stdin`) and standard output (`stdout`) bi-directionally between endpoints.
 
 ---
@@ -46,6 +48,9 @@ Or simply:
 ```
 
 #### Server Options:
+- `-shell`: Start a fully interactive PTY shell daemon (replaces SSH).
+- `-socks`: Start a remote SOCKS5 proxy server.
+- `-passphrase <secret>`: Deterministically generates a secure TLS certificate and Device ID from a secret password, so you don't need to copy-paste long Device IDs.
 - `-cert <path>`: Custom TLS certificate path (default: empty, runs in-memory).
 - `-key <path>`: Custom TLS key path (default: empty, runs in-memory).
 - `-relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
@@ -82,11 +87,30 @@ Specify the relay address manually via the `-relay` flag:
 ```
 
 #### Client Options:
+- `-shell`: Put the local terminal in raw mode and connect to a remote `-shell` server.
+- `-socks <address>`: Spin up a local SOCKS5 proxy on this address (e.g. `127.0.0.1:10800`).
+- `-passphrase <secret>`: Use the same passphrase as the server to auto-discover and connect without needing the Server Device ID!
 - `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
 - `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
 - `-direct`: Attempt direct P2P connections via WebRTC ICE (UDP NAT Hole Punching) and direct TCP before seamlessly falling back to relay. Set `-direct=false` to disable ICE and force relay connections (default: true).
 - `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
+
+---
+
+## Advanced: Interactive PTY Shell (SSH Replacement)
+
+You can completely bypass the need for an external OpenSSH server by using the built-in PTY shell!
+
+1. **On the Server:**
+```bash
+./syncthing-socket server -passphrase "my-secret" -shell
+```
+2. **On the Client:**
+```bash
+./syncthing-socket client -passphrase "my-secret" -shell
+```
+This spawns a remote bash session and pipes your raw local terminal directly into it. It natively supports tab-completion, `vim`, `htop`, and even transmits window resizing events (`SIGWINCH`) over a dedicated lightweight control stream so the remote UI always perfectly fits your screen.
 
 ---
 

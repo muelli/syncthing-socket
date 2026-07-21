@@ -1,0 +1,75 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestShellP2P(t *testing.T) {
+	cmdBuild := exec.Command("go", "build", "-o", "test-shell-binary", ".")
+	if err := cmdBuild.Run(); err != nil {
+		t.Fatalf("Failed to build binary: %v", err)
+	}
+
+	passphrase := fmt.Sprintf("test-shell-passphrase-%d", time.Now().UnixNano())
+	testFile := fmt.Sprintf("/tmp/shell_test_out_%d.txt", time.Now().UnixNano())
+	defer os.Remove(testFile)
+
+	// Start server in shell mode
+	cmdServer := exec.Command("./test-shell-binary", "server", "-passphrase", passphrase, "-shell", "-log-level", "debug")
+	cmdServer.Stdout = os.Stdout
+	cmdServer.Stderr = os.Stderr
+	if err := cmdServer.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer cmdServer.Process.Kill()
+
+	// Wait for server discovery propagation
+	time.Sleep(15 * time.Second)
+
+	// Start client in shell mode
+	cmdClient := exec.Command("./test-shell-binary", "client", "-passphrase", passphrase, "-shell", "-log-level", "debug")
+	
+	// Inject mock command into client's stdin
+	mockCommand := fmt.Sprintf("echo 'hello from pty' > %s\nexit\n", testFile)
+	cmdClient.Stdin = bytes.NewBufferString(mockCommand)
+	
+	// Stream output directly to test logs
+	cmdClient.Stdout = os.Stdout
+	cmdClient.Stderr = os.Stderr
+
+	if err := cmdClient.Start(); err != nil {
+		t.Fatalf("Failed to start client: %v", err)
+	}
+	defer cmdClient.Process.Kill()
+
+	// Wait for client to connect, send the command, and exit.
+	doneChan := make(chan error)
+	go func() {
+		doneChan <- cmdClient.Wait()
+	}()
+
+	select {
+	case <-time.After(30 * time.Second):
+		t.Fatalf("Test timed out waiting for shell client to finish")
+	case <-doneChan:
+		// Client finished, verify
+	}
+
+	// Verify the file was created on the server side
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test output file. Shell execution failed: %v", err)
+	}
+
+	if !strings.Contains(string(content), "hello from pty") {
+		t.Fatalf("Expected 'hello from pty', got '%s'", string(content))
+	}
+
+	t.Logf("Successfully executed commands over multiplexed PTY shell session!")
+}

@@ -152,6 +152,7 @@ func main() {
 	serverKey := serverCmd.String("key", "", "Path to TLS key (optional)")
 	serverPassphrase := serverCmd.String("passphrase", "", "Passphrase to deterministically generate the TLS certificate")
 	serverSocks := serverCmd.Bool("socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
+	serverShell := serverCmd.Bool("shell", false, "Start an interactive PTY shell server")
 	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
@@ -164,6 +165,7 @@ func main() {
 	clientKey := clientCmd.String("key", "", "Path to TLS key (optional)")
 	clientPassphrase := clientCmd.String("passphrase", "", "Passphrase to deterministically generate the TLS certificate")
 	clientSocks := clientCmd.String("socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
+	clientShell := clientCmd.Bool("shell", false, "Start an interactive PTY shell client")
 	clientRelay := clientCmd.String("relay", "", "Relay URI (if specified, bypasses discovery lookup)")
 	clientDiscovery := clientCmd.String("discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
 	clientTryDirect := clientCmd.Bool("direct", true, "Try direct TCP connections before falling back to relay")
@@ -182,6 +184,11 @@ func main() {
 	case "server":
 		serverCmd.Parse(os.Args[2:])
 		setupLogging(*serverLogLevel, *serverLogFormat)
+
+		if (*serverSocks && *serverShell) || (*serverSocks && *serverForward != "") || (*serverShell && *serverForward != "") {
+			slog.Error("Error: -socks, -shell, and -forward are mutually exclusive. Please specify only one mode.")
+			os.Exit(1)
+		}
 
 		var cert tls.Certificate
 		var err error
@@ -208,7 +215,7 @@ func main() {
 				}
 			}
 		}
-		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort, *serverSocks); err != nil {
+		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort, *serverSocks, *serverShell); err != nil {
 			slog.Error("Server error", "error", err)
 			os.Exit(1)
 		}
@@ -216,6 +223,11 @@ func main() {
 	case "client":
 		clientCmd.Parse(os.Args[2:])
 		setupLogging(*clientLogLevel, *clientLogFormat)
+
+		if *clientSocks != "" && *clientShell {
+			slog.Error("Error: -socks and -shell are mutually exclusive. Please specify only one mode.")
+			os.Exit(1)
+		}
 
 		args := clientCmd.Args()
 		var targetStr string
@@ -273,7 +285,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery, *clientTryDirect, *clientSocks); err != nil {
+		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery, *clientTryDirect, *clientSocks, *clientShell); err != nil {
 			slog.Error("Client error", "error", err)
 			os.Exit(1)
 		}
@@ -407,7 +419,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -571,7 +583,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		select {
 		case info := <-connChan:
-			handleServerConn(info.conn, cert, info.isRelay, isSocks)
+			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -579,7 +591,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -601,25 +613,33 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 		slog.Info("Connection established with anonymous client")
 	}
 
+	handleConn := func(finalConn net.Conn) {
+		if isSocks {
+			runSocksServer(finalConn)
+		} else if isShell {
+			runShellServer(finalConn)
+		} else {
+			defer finalConn.Close()
+			pipeBiDirectional(finalConn)
+		}
+	}
+
 	if isRelay {
 		p2pConn, fallback, err := negotiateWebRTCServer(context.Background(), tlsConn)
 		if fallback || err != nil {
 			slog.Info("Using relay connection for data (ICE bypassed or failed)", "error", err)
-			if !isSocks { defer tlsConn.Close() }
-			if isSocks { runSocksServer(tlsConn) } else { pipeBiDirectional(tlsConn) }
+			handleConn(tlsConn)
 			return
 		}
 		slog.Info("Direct P2P ICE connection established! Closing relay.")
 		tlsConn.Close()
-		if !isSocks { defer p2pConn.Close() }
-		if isSocks { runSocksServer(p2pConn) } else { pipeBiDirectional(p2pConn) }
+		handleConn(p2pConn)
 	} else {
-		if !isSocks { defer tlsConn.Close() }
-		if isSocks { runSocksServer(tlsConn) } else { pipeBiDirectional(tlsConn) }
+		handleConn(tlsConn)
 	}
 }
 
-func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string) error {
+func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool) error {
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)
@@ -744,12 +764,20 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 
 	slog.Info("Connected successfully via relay", "peerID", peerID.String())
 	
+	handleConn := func(finalConn net.Conn) {
+		if localSocks != "" {
+			runSocksClient(ctx, finalConn, localSocks)
+		} else if isShell {
+			runShellClient(ctx, finalConn)
+		} else {
+			defer finalConn.Close()
+			pipeBiDirectional(finalConn)
+		}
+	}
+
 	if !tryDirect {
 		slog.Info("Relay-only mode requested. Bypassing ICE.")
-		if localSocks != "" { runSocksClient(ctx, tlsConn, localSocks) } else {
-			defer tlsConn.Close()
-			pipeBiDirectional(tlsConn)
-		}
+		handleConn(tlsConn)
 		return nil
 	}
 
@@ -758,19 +786,13 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	if err != nil {
 		slog.Warn("ICE negotiation failed, falling back to relay", "error", err)
 		sendSignal(tlsConn, SignalMessage{Type: "fallback"})
-		if localSocks != "" { runSocksClient(ctx, tlsConn, localSocks) } else {
-			defer tlsConn.Close()
-			pipeBiDirectional(tlsConn)
-		}
+		handleConn(tlsConn)
 		return nil
 	}
 
 	slog.Info("Direct P2P ICE connection established! Closing relay.")
 	tlsConn.Close()
-	if localSocks != "" { runSocksClient(ctx, p2pConn, localSocks) } else {
-		defer p2pConn.Close()
-		pipeBiDirectional(p2pConn)
-	}
+	handleConn(p2pConn)
 	return nil
 }
 

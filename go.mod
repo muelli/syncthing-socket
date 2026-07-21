@@ -1,12 +1,15 @@
 module syncthing-socket
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
+	github.com/creack/pty v1.1.24
 	github.com/hashicorp/yamux v0.1.2
 	github.com/pion/webrtc/v4 v4.2.17
 	github.com/syncthing/syncthing v1.30.0
+	golang.org/x/net v0.50.0
+	golang.org/x/term v0.45.0
 )
 
 require (
@@ -46,8 +49,7 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
