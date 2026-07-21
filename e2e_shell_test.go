@@ -21,7 +21,7 @@ func TestShellP2P(t *testing.T) {
 	defer os.Remove(testFile)
 
 	// Start server in shell mode
-	cmdServer := exec.Command("./test-shell-binary", "server", "-passphrase", passphrase, "-shell", "-log-level", "debug", "-log-format", "text")
+	cmdServer := exec.Command("./test-shell-binary", "server", "--passphrase", passphrase, "--shell", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -33,7 +33,7 @@ func TestShellP2P(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Start client in shell mode
-	cmdClient := exec.Command("./test-shell-binary", "client", "-passphrase", passphrase, "-shell", "-log-level", "debug", "-log-format", "text")
+	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--shell", "--log-level", "debug", "--log-format", "text")
 	
 	// Inject mock command into client's stdin, using a pipe so it doesn't instantly EOF
 	stdinRead, stdinWrite := io.Pipe()

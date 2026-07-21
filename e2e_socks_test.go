@@ -28,7 +28,7 @@ func TestSocksProxyE2E(t *testing.T) {
 	passphrase := fmt.Sprintf("test-socks-e2e-passphrase-%d", time.Now().UnixNano())
 	
 	// 2. Start server
-	cmdServer := exec.Command("./test-syncthing-socket", "server", "-passphrase", passphrase, "-socks", "-log-level", "debug", "-log-format", "text")
+	cmdServer := exec.Command("./test-syncthing-socket", "server", "--passphrase", passphrase, "--socks", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -40,7 +40,7 @@ func TestSocksProxyE2E(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// 3. Start client (notice we don't need the Server ID positional argument because of the passphrase!)
-	cmdClient := exec.Command("./test-syncthing-socket", "client", "-passphrase", passphrase, "-socks", "127.0.0.1:10800", "-log-level", "debug", "-log-format", "text")
+	cmdClient := exec.Command("./test-syncthing-socket", "client", "--passphrase", passphrase, "--socks", "127.0.0.1:10800", "--log-level", "debug", "--log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 	if err := cmdClient.Start(); err != nil {
