@@ -22,18 +22,40 @@ func TestCommandExecutionP2P(t *testing.T) {
 	// Start server in command mode
 	// We'll execute a command that reads stdin and echoes it back, plus writes to stderr
 	cmdServer := exec.Command("./test-command-binary", "server", "--passphrase", passphrase, "--command", "echo 'starting command'; cat -; echo 'error log' >&2", "--log-level", "debug", "--log-format", "text")
-	cmdServer.Stdout = os.Stdout
+	var serverOutput bytes.Buffer
+	cmdServer.Stdout = io.MultiWriter(os.Stdout, &serverOutput)
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
 	defer cmdServer.Process.Kill()
 
-	// Wait for server discovery propagation
-	time.Sleep(15 * time.Second)
+	// Parse server output to find the relay URI to bypass global discovery rate limits
+	deadlineRelay := time.Now().Add(30 * time.Second)
+	relayURI := ""
+	for time.Now().Before(deadlineRelay) {
+		lines := strings.Split(serverOutput.String(), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Joined relay") {
+				parts := strings.Split(line, "Joined relay ")
+				if len(parts) == 2 {
+					relayURI = strings.TrimSpace(parts[1])
+				}
+				break
+			}
+		}
+		if relayURI != "" {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
-	// Start client
-	cmdClient := exec.Command("./test-command-binary", "client", "--passphrase", passphrase, "--log-level", "debug", "--log-format", "text")
+	if relayURI == "" {
+		t.Fatalf("Server failed to join relay within timeout")
+	}
+
+	// Start client, explicitly passing the relay URI
+	cmdClient := exec.Command("./test-command-binary", "client", "--passphrase", passphrase, "--relay", relayURI, "--log-level", "debug", "--log-format", "text")
 	
 	// Inject mock data to client's stdin, leaving it open to prevent premature client exit
 	stdinRead, stdinWrite := io.Pipe()

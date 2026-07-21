@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,18 +30,40 @@ func TestSocksProxyE2E(t *testing.T) {
 	
 	// 2. Start server
 	cmdServer := exec.Command("./test-syncthing-socket", "server", "--passphrase", passphrase, "--socks", "--log-level", "debug", "--log-format", "text")
-	cmdServer.Stdout = os.Stdout
+	var serverOutput bytes.Buffer
+	cmdServer.Stdout = io.MultiWriter(os.Stdout, &serverOutput)
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
 	defer cmdServer.Process.Kill()
 
-	// Wait for server to connect to relay and announce itself
-	time.Sleep(15 * time.Second)
+	// Parse server output to find the relay URI to bypass global discovery rate limits
+	deadlineRelay := time.Now().Add(30 * time.Second)
+	relayURI := ""
+	for time.Now().Before(deadlineRelay) {
+		lines := strings.Split(serverOutput.String(), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Joined relay") {
+				parts := strings.Split(line, "Joined relay ")
+				if len(parts) == 2 {
+					relayURI = strings.TrimSpace(parts[1])
+				}
+				break
+			}
+		}
+		if relayURI != "" {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 
-	// 3. Start client (notice we don't need the Server ID positional argument because of the passphrase!)
-	cmdClient := exec.Command("./test-syncthing-socket", "client", "--passphrase", passphrase, "--socks", "127.0.0.1:10800", "--log-level", "debug", "--log-format", "text")
+	if relayURI == "" {
+		t.Fatalf("Server failed to join relay within timeout")
+	}
+
+	// Start client, explicitly passing the relay URI
+	cmdClient := exec.Command("./test-syncthing-socket", "client", "--passphrase", passphrase, "--relay", relayURI, "--socks", "127.0.0.1:10800", "--log-level", "debug", "--log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 	if err := cmdClient.Start(); err != nil {
