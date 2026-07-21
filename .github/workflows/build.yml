@@ -3,6 +3,7 @@ name: Build and Upload Artifacts
 on:
   push:
     branches: [ "*" ]
+    tags: [ "v*.*.*" ]
   pull_request:
     branches: [ "*" ]
   workflow_dispatch:
@@ -29,7 +30,9 @@ jobs:
       - name: Build Binaries
         run: |
           mkdir -p dist
-          VERSION=$(git rev-list --count HEAD)
+          DIRTY=$([ -z "$(git status --porcelain)" ] || echo "-dirty")
+          BASE_VER=$(git describe --exact-match --tags HEAD 2>/dev/null || git rev-list --count HEAD)
+          VERSION="${BASE_VER}${DIRTY}"
           LDFLAGS="-s -w -X main.Version=$VERSION"
           
           # Build for Linux (AMD64)
@@ -49,3 +52,10 @@ jobs:
         with:
           name: syncthing-socket-binaries
           path: dist/*
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
+          generate_release_notes: true
