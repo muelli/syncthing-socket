@@ -125,6 +125,24 @@ ssh my-nat-server
 
 ---
 
+## Proxy Support
+
+Both the `server` and `client` natively respect standard proxy environment variables to help bypass restrictive firewalls.
+
+**Supported Variables:**
+- `SOCKS_PROXY` (or `socks_proxy`): e.g. `socks5://127.0.0.1:1080`
+- `HTTP_PROXY` (or `http_proxy`): e.g. `http://proxy.corp.com:8080`
+- `HTTPS_PROXY` (or `https_proxy`)
+
+**How it works:**
+1. **Discovery (HTTPS):** Uses standard Go networking logic to route queries to `discovery.syncthing.net` via your specified `HTTP_PROXY` / `HTTPS_PROXY`.
+2. **Syncthing Relay Network (Raw TCP):** Transparently dials out to the Syncthing Relay endpoints (`relay://...`) by tunneling the raw TCP traffic through either your specified `SOCKS_PROXY` or via an `HTTP CONNECT` tunnel if an `HTTP_PROXY` is provided.
+3. **Direct Connections (WebRTC ICE):** STUN/TURN discovery queries are handled by Pion and may also route over supported proxies if configured in the environment. Direct P2P TCP hole punching attempts to establish a connection directly between peers (bypassing proxies if local).
+
+*Note: If both SOCKS and HTTP proxies are provided in the environment, SOCKS takes precedence for raw TCP routing to the Relay network.*
+
+---
+
 ## Security Model
 
 1. **Relay Blindness:** The relay server acts purely as a TCP proxy. It cannot decrypt or read any data sent through it.

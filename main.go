@@ -145,6 +145,8 @@ func isTraceEnabled() bool {
 }
 
 func main() {
+	setupProxyEnvironment()
+
 	serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
 	serverCert := serverCmd.String("cert", "", "Path to TLS certificate (optional)")
 	serverKey := serverCmd.String("key", "", "Path to TLS key (optional)")
