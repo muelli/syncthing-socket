@@ -4,9 +4,11 @@ go 1.25.0
 
 require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creack/pty v1.1.24
 	github.com/hashicorp/yamux v0.1.2
 	github.com/pion/webrtc/v4 v4.2.17
+	github.com/spf13/pflag v1.0.10
 	github.com/syncthing/syncthing v1.30.0
 	golang.org/x/net v0.50.0
 	golang.org/x/term v0.45.0
@@ -16,7 +18,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/calmh/xdr v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

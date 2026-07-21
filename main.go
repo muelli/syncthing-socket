@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"flag"
+	flag "github.com/spf13/pflag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -74,7 +74,7 @@ func main() {
 		setupLogging(*serverLogLevel, *serverLogFormat)
 
 		if (*serverSocks && *serverShell) || (*serverSocks && *serverForward != "") || (*serverSocks && *serverCommand != "") || (*serverShell && *serverForward != "") || (*serverShell && *serverCommand != "") || (*serverForward != "" && *serverCommand != "") {
-			slog.Error("Error: -socks, -shell, -command, and -forward are mutually exclusive. Please specify only one mode.")
+			slog.Error("Error: --socks, --shell, --command, and --forward are mutually exclusive. Please specify only one mode.")
 			os.Exit(1)
 		}
 
@@ -125,7 +125,7 @@ func main() {
 			}
 		} else {
 			if len(args) < 1 {
-				fmt.Println("Error: client mode requires target server Device ID")
+				fmt.Println("Error: client mode requires target server Device ID unless --passphrase is used")
 				clientCmd.Usage()
 				os.Exit(1)
 			}
@@ -181,7 +181,7 @@ func main() {
 	case "id":
 		idCmd.Parse(os.Args[2:])
 		if *idPassphrase == "" {
-			fmt.Println("Error: -passphrase is required")
+			fmt.Println("Error: --passphrase is required")
 			os.Exit(1)
 		}
 		
