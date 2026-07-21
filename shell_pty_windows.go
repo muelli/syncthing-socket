@@ -96,7 +96,10 @@ func spawnShell() (ShellSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = stdout
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
 
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -111,21 +114,23 @@ func spawnShell() (ShellSession, error) {
 		outWriter: pw,
 	}
 
-	go func() {
+	copyFunc := func(r io.Reader) {
 		buf := make([]byte, 4096)
 		for {
-			n, err := stdout.Read(buf)
+			n, err := r.Read(buf)
 			if n > 0 {
 				shell.outMutex.Lock()
 				pw.Write(buf[:n])
 				shell.outMutex.Unlock()
 			}
 			if err != nil {
-				pw.CloseWithError(err)
 				break
 			}
 		}
-	}()
+	}
+
+	go copyFunc(stdout)
+	go copyFunc(stderr)
 
 	return shell, nil
 }
