@@ -1,10 +1,8 @@
 # Use native Just if/else to avoid Windows shell syntax errors
 GO := if `[ -f "./local/go/bin/go" ] || [ -f "./local/go/bin/go.exe" ] && echo "1" || echo ""` == "1" { "./local/go/bin/go" } else { "go" }
 
-# Evaluate git commands in separate backticks to avoid complex shell pipes
-DIRTY := if `git status --porcelain` == "" { "" } else { "-dirty" }
-BASE_VER := `git describe --exact-match --tags HEAD 2>/dev/null || git rev-list --count HEAD`
-VERSION := BASE_VER + DIRTY
+# Evaluate git commands using a centralized script to avoid discrepancies
+VERSION := `sh scripts/version.sh`
 
 # Build the project
 build:

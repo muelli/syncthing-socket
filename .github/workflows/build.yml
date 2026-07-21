@@ -30,9 +30,7 @@ jobs:
       - name: Build Binaries
         run: |
           mkdir -p dist
-          DIRTY=$([ -z "$(git status --porcelain)" ] || echo "-dirty")
-          BASE_VER=$(git describe --exact-match --tags HEAD 2>/dev/null || git rev-list --count HEAD)
-          VERSION="${BASE_VER}${DIRTY}"
+          VERSION=$(sh scripts/version.sh)
           LDFLAGS="-s -w -X main.Version=$VERSION"
           
           # Build for Linux (AMD64)
