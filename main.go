@@ -367,37 +367,6 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		fmt.Println("==================================================")
 	}
 
-	slog.Info("Relay client starting", "relay", u.String())
-	relayClient, err := client.NewClient(u, []tls.Certificate{cert}, 15*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to create relay client: %w", err)
-	}
-
-	systemdNotify("STATUS=Connecting to relay...")
-
-	go func() {
-		if err := relayClient.Serve(ctx); err != nil {
-			slog.Error("Relay client stopped", "error", err)
-		}
-	}()
-
-	var connectedURI *url.URL
-	for {
-		if err := relayClient.Error(); err != nil {
-			return fmt.Errorf("relay client error: %w", err)
-		}
-		connectedURI = relayClient.URI()
-		if connectedURI != nil {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
 	extraFlags := ""
 	if isShell {
 		extraFlags = " --shell"
@@ -405,18 +374,60 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		extraFlags = " --socks 127.0.0.1:1080"
 	}
 
-	fmt.Printf("Connected to Relay: %s\n", connectedURI.String())
-	fmt.Printf("To connect, run:\n")
-	fmt.Printf("  ./syncthing-socket client%s -relay %q %s\n", extraFlags, connectedURI.String(), serverID.String())
-	fmt.Printf("Or simply:\n")
-	fmt.Printf("  ./syncthing-socket client%s %s@%s\n", extraFlags, serverID.String(), connectedURI.String())
-	fmt.Println("==================================================")
-	slog.Info("Connected to relay", "uri", connectedURI.String())
-
-	systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
-
+	var relayClient client.RelayClient
+	var connectedURI *url.URL
 	var announceAddrs []string
-	announceAddrs = append(announceAddrs, connectedURI.String())
+
+	if relayURI != "" {
+		slog.Info("Relay client starting", "relay", u.String())
+		relayClient, err = client.NewClient(u, []tls.Certificate{cert}, 15*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed to create relay client: %w", err)
+		}
+
+		systemdNotify("STATUS=Connecting to relay...")
+
+		go func() {
+			if err := relayClient.Serve(ctx); err != nil {
+				slog.Error("Relay client stopped", "error", err)
+			}
+		}()
+
+		for {
+			if err := relayClient.Error(); err != nil {
+				return fmt.Errorf("relay client error: %w", err)
+			}
+			connectedURI = relayClient.URI()
+			if connectedURI != nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+
+		fmt.Printf("Connected to Relay: %s\n", connectedURI.String())
+		fmt.Printf("To connect, run:\n")
+		fmt.Printf("  ./syncthing-socket client%s -relay %q %s\n", extraFlags, connectedURI.String(), serverID.String())
+		fmt.Printf("Or simply:\n")
+		fmt.Printf("  ./syncthing-socket client%s %s@%s\n", extraFlags, serverID.String(), connectedURI.String())
+		fmt.Println("==================================================")
+		slog.Info("Connected to relay", "uri", connectedURI.String())
+
+		systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
+		announceAddrs = append(announceAddrs, connectedURI.String())
+	} else {
+		systemdNotify("READY=1\nSTATUS=Listening for direct connections only")
+		if directPort > 0 {
+			actualPort := tcpListener.Addr().(*net.TCPAddr).Port
+			fmt.Printf("To connect directly, run:\n")
+			fmt.Printf("  ./syncthing-socket client%s -relay \"tcp://127.0.0.1:%d\" %s\n", extraFlags, actualPort, serverID.String())
+			fmt.Println("==================================================")
+		}
+	}
 	if directPort > 0 {
 		actualPort := tcpListener.Addr().(*net.TCPAddr).Port
 		announceAddrs = append(announceAddrs, fmt.Sprintf("tcp://:%d", actualPort))
@@ -442,23 +453,28 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			}()
 		}
 
-		invs := relayClient.Invitations()
-		for {
-			select {
-			case inv, ok := <-invs:
-				if !ok {
-					return fmt.Errorf("invitations channel closed")
+		if relayClient != nil {
+			invs := relayClient.Invitations()
+			for {
+				select {
+				case inv, ok := <-invs:
+					if !ok {
+						return fmt.Errorf("invitations channel closed")
+					}
+					slog.Info("Received invitation from relay, joining session")
+					conn, err := client.JoinSession(ctx, inv)
+					if err != nil {
+						slog.Error("Failed to join session", "error", err)
+						continue
+					}
+					go handleForwardConn(conn, cert, forwardAddr, true)
+				case <-ctx.Done():
+					return ctx.Err()
 				}
-				slog.Info("Received invitation from relay, joining session")
-				conn, err := client.JoinSession(ctx, inv)
-				if err != nil {
-					slog.Error("Failed to join session", "error", err)
-					continue
-				}
-				go handleForwardConn(conn, cert, forwardAddr, true)
-			case <-ctx.Done():
-				return ctx.Err()
 			}
+		} else {
+			<-ctx.Done()
+			return ctx.Err()
 		}
 	} else {
 		// Simple Netcat Mode: accept exactly one connection and exit
@@ -483,31 +499,33 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			}()
 		}
 
-		go func() {
-			invs := relayClient.Invitations()
-			for {
-				select {
-				case inv, ok := <-invs:
-					if !ok {
-						return
-					}
-					slog.Info("Received invitation from relay, joining session")
-					conn, err := client.JoinSession(ctx, inv)
-					if err != nil {
-						slog.Error("Failed to join session", "error", err)
-						continue
-					}
+		if relayClient != nil {
+			go func() {
+				invs := relayClient.Invitations()
+				for {
 					select {
-					case connChan <- connInfo{conn, true}:
+					case inv, ok := <-invs:
+						if !ok {
+							return
+						}
+						slog.Info("Received invitation from relay, joining session")
+						conn, err := client.JoinSession(ctx, inv)
+						if err != nil {
+							slog.Error("Failed to join session", "error", err)
+							continue
+						}
+						select {
+						case connChan <- connInfo{conn, true}:
+							return
+						default:
+							conn.Close()
+						}
+					case <-ctx.Done():
 						return
-					default:
-						conn.Close()
 					}
-				case <-ctx.Done():
-					return
 				}
-			}
-		}()
+			}()
+		}
 
 		select {
 		case info := <-connChan:
