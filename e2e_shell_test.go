@@ -32,28 +32,7 @@ func TestShellP2P(t *testing.T) {
 	defer cmdServer.Process.Kill()
 
 	// Parse server output to find the relay URI to bypass global discovery rate limits
-	deadlineRelay := time.Now().Add(30 * time.Second)
-	relayURI := ""
-	for time.Now().Before(deadlineRelay) {
-		lines := strings.Split(serverOutput.String(), "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Joined relay") {
-				parts := strings.Split(line, "Joined relay ")
-				if len(parts) == 2 {
-					relayURI = strings.TrimSpace(parts[1])
-				}
-				break
-			}
-		}
-		if relayURI != "" {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	if relayURI == "" {
-		t.Fatalf("Server failed to join relay within timeout")
-	}
+	relayURI := waitForRelayURI(t, &serverOutput, 30*time.Second)
 
 	// Start client in shell mode, explicitly passing the relay URI
 	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--relay", relayURI, "--shell", "--log-level", "debug", "--log-format", "text")
