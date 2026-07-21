@@ -3,7 +3,7 @@ name: Build and Upload Artifacts
 on:
   push:
     branches: [ "*" ]
-    tags: [ "v*.*.*" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "*" ]
   workflow_dispatch:
