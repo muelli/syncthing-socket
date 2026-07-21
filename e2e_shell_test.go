@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -22,20 +21,19 @@ func TestShellP2P(t *testing.T) {
 	defer os.Remove(testFile)
 
 	// Start server in shell mode
-	cmdServer := exec.Command("./test-shell-binary", "server", "--passphrase", passphrase, "--shell", "--log-level", "debug", "--log-format", "text")
-	var serverOutput bytes.Buffer
-	cmdServer.Stdout = io.MultiWriter(os.Stdout, &serverOutput)
+	cmdServer := exec.Command("./test-shell-binary", "server", "--passphrase", passphrase, "--shell", "--direct-port", "22002", "--log-level", "debug", "--log-format", "text")
+	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
 	defer cmdServer.Process.Kill()
 
-	// Parse server output to find the relay URI to bypass global discovery rate limits
-	relayURI := waitForRelayURI(t, &serverOutput, 30*time.Second)
+	// Wait briefly for local socket to bind
+	time.Sleep(1 * time.Second)
 
-	// Start client in shell mode, explicitly passing the relay URI
-	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--relay", relayURI, "--shell", "--log-level", "debug", "--log-format", "text")
+	// Start client in shell mode, explicitly passing the direct TCP URI
+	cmdClient := exec.Command("./test-shell-binary", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:22002", "--shell", "--log-level", "debug", "--log-format", "text")
 	
 	// Inject mock command into client's stdin, using a pipe so it doesn't instantly EOF
 	stdinRead, stdinWrite := io.Pipe()

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,20 +28,19 @@ func TestSocksProxyE2E(t *testing.T) {
 	passphrase := fmt.Sprintf("test-socks-e2e-passphrase-%d", time.Now().UnixNano())
 	
 	// 2. Start server
-	cmdServer := exec.Command("./test-syncthing-socket", "server", "--passphrase", passphrase, "--socks", "--log-level", "debug", "--log-format", "text")
-	var serverOutput bytes.Buffer
-	cmdServer.Stdout = io.MultiWriter(os.Stdout, &serverOutput)
+	cmdServer := exec.Command("./test-syncthing-socket", "server", "--passphrase", passphrase, "--socks", "--direct-port", "22001", "--log-level", "debug", "--log-format", "text")
+	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
 	defer cmdServer.Process.Kill()
 
-	// Parse server output to find the relay URI to bypass global discovery rate limits
-	relayURI := waitForRelayURI(t, &serverOutput, 30*time.Second)
+	// Wait briefly for local socket to bind
+	time.Sleep(1 * time.Second)
 
-	// Start client, explicitly passing the relay URI
-	cmdClient := exec.Command("./test-syncthing-socket", "client", "--passphrase", passphrase, "--relay", relayURI, "--socks", "127.0.0.1:10800", "--log-level", "debug", "--log-format", "text")
+	// Start client, explicitly passing the direct TCP URI
+	cmdClient := exec.Command("./test-syncthing-socket", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:22001", "--socks", "127.0.0.1:10800", "--log-level", "debug", "--log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 	if err := cmdClient.Start(); err != nil {
