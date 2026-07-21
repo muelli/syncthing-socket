@@ -129,3 +129,54 @@ func runShellClient(ctx context.Context, p2pConn net.Conn) {
 	}()
 	CopyWithTrace(os.Stdout, dataStream, "remote->stdout")
 }
+
+func runCommandServer(conn net.Conn, commandStr string) {
+	slog.Info("Starting command execution server", "command", commandStr)
+
+	cmd := exec.Command("/bin/sh", "-c", commandStr)
+	
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		slog.Error("Failed to create stdin pipe", "error", err)
+		return
+	}
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		slog.Error("Failed to create stdout pipe", "error", err)
+		return
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		slog.Error("Failed to create stderr pipe", "error", err)
+		return
+	}
+
+	// Route stderr to our structured logging system
+	go func() {
+		scanner := bufio.NewScanner(stderrPipe)
+		for scanner.Scan() {
+			slog.Warn("Command stderr", "output", scanner.Text())
+		}
+	}()
+
+	go func() {
+		CopyWithTrace(stdinPipe, conn, "remote->stdin")
+		stdinPipe.Close()
+	}()
+
+	go func() {
+		CopyWithTrace(conn, stdoutPipe, "stdout->remote")
+	}()
+
+	if err := cmd.Start(); err != nil {
+		slog.Error("Failed to start command", "error", err)
+		return
+	}
+
+	err = cmd.Wait()
+	if err != nil {
+		slog.Info("Command exited with error", "error", err)
+	} else {
+		slog.Info("Command exited successfully")
+	}
+}

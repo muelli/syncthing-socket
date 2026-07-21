@@ -37,6 +37,7 @@ func main() {
 	serverPassphrase := serverCmd.String("passphrase", "", "Passphrase to deterministically generate the TLS certificate")
 	serverSocks := serverCmd.Bool("socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
 	serverShell := serverCmd.Bool("shell", false, "Start an interactive PTY shell server")
+	serverCommand := serverCmd.String("command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
 	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
@@ -69,8 +70,8 @@ func main() {
 		serverCmd.Parse(os.Args[2:])
 		setupLogging(*serverLogLevel, *serverLogFormat)
 
-		if (*serverSocks && *serverShell) || (*serverSocks && *serverForward != "") || (*serverShell && *serverForward != "") {
-			slog.Error("Error: -socks, -shell, and -forward are mutually exclusive. Please specify only one mode.")
+		if (*serverSocks && *serverShell) || (*serverSocks && *serverForward != "") || (*serverSocks && *serverCommand != "") || (*serverShell && *serverForward != "") || (*serverShell && *serverCommand != "") || (*serverForward != "" && *serverCommand != "") {
+			slog.Error("Error: -socks, -shell, -command, and -forward are mutually exclusive. Please specify only one mode.")
 			os.Exit(1)
 		}
 
@@ -99,7 +100,7 @@ func main() {
 				}
 			}
 		}
-		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort, *serverSocks, *serverShell); err != nil {
+		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort, *serverSocks, *serverShell, *serverCommand); err != nil {
 			slog.Error("Server error", "error", err)
 			os.Exit(1)
 		}
@@ -303,7 +304,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -467,7 +468,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		select {
 		case info := <-connChan:
-			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell)
+			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -475,7 +476,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -502,6 +503,8 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 			runSocksServer(finalConn)
 		} else if isShell {
 			runShellServer(finalConn)
+		} else if isCommand != "" {
+			runCommandServer(finalConn, isCommand)
 		} else {
 			defer finalConn.Close()
 			pipeBiDirectional(finalConn)
