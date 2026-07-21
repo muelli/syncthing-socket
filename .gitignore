@@ -7,3 +7,6 @@ key.pem
 
 # Local Go installation
 local/
+
+# Test binaries
+test-*
