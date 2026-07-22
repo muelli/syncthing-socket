@@ -1,0 +1,148 @@
+.TH SYNCTHING-SOCKET 1 "July 2026" "syncthing-socket" "User Commands"
+.SH NAME
+syncthing-socket \- Peer-to-peer data channels over the Syncthing global network.
+.SH SYNOPSIS
+.B syncthing-socket
+.B server
+[\fIOPTIONS\fR]
+.br
+.B syncthing-socket
+.B client
+[\fIOPTIONS\fR] \fI<server-id>\fR
+.br
+.B syncthing-socket
+.B id
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B syncthing-socket
+allows connecting machines behind strict NATs by utilizing the global Syncthing relay and discovery servers. It leverages the Syncthing network to announce and lookup nodes via cryptographic Device IDs.
+.PP
+When a client attempts to connect to a server, the initial connection is tunneled through a Syncthing relay. Over this relay, both sides negotiate a direct WebRTC ICE connection. If direct NAT traversal succeeds, the relay is seamlessly dropped and traffic flows directly peer-to-peer, resulting in high throughput and low latency.
+.SH COMMANDS
+.TP
+.B server
+Announces the node to the Syncthing discovery network and listens for incoming connections on the relay network. Prints a Device ID that clients can use to connect.
+.TP
+.B client
+Looks up the provided Server Device ID and establishes a connection. Can pipe data or interact with multiplexed features like shell or SOCKS5.
+.TP
+.B id
+Prints the local Syncthing Device ID based on a given certificate or passphrase without starting a server or client.
+.SH SERVER OPTIONS
+.TP
+.BR \-\-cert " \fIPATH\fR"
+Path to a custom TLS certificate (optional).
+.TP
+.BR \-\-key " \fIPATH\fR"
+Path to a custom TLS key (optional).
+.TP
+.BR \-\-passphrase " \fISTRING\fR"
+Passphrase to deterministically generate the TLS certificate and Device ID on the fly.
+.TP
+.B \-\-socks
+Start a remote SOCKS5 proxy server. The client must also specify \-\-socks to multiplex traffic over the tunnel.
+.TP
+.B \-\-shell
+Start an interactive PTY shell server. The client must also specify \-\-shell to connect and interact.
+.TP
+.BR \-\-command " \fICOMMAND\fR"
+Execute a specific shell command for each incoming connection and pipe its stdin/stdout over the tunnel.
+.TP
+.BR \-\-direct\-port " \fIPORT\fR"
+Enable a direct TCP listener on the specified port. Used for bypassing relays completely in local environments (0 to disable).
+.TP
+.BR \-\-relay " \fIURI\fR"
+Specify a custom Syncthing relay URI or dynamic pool URL. Defaults to the global Syncthing endpoint. Set to empty string ("") to disable relay connections.
+.TP
+.BR \-\-discovery " \fIURL\fR"
+Comma-separated discovery announce URLs. Set to empty string ("") to disable discovery announcements.
+.SH CLIENT OPTIONS
+.TP
+.BR \-\-socks " \fIADDRESS\fR"
+Start a local SOCKS5 proxy on the given address (e.g. 127.0.0.1:1080) and tunnel traffic to the server.
+.TP
+.B \-\-shell
+Start an interactive PTY shell client session.
+.TP
+.BR \-\-relay " \fIURI\fR"
+Explicitly specify a relay URI or direct TCP address (e.g. tcp://127.0.0.1:22001) to connect to, bypassing the discovery lookup.
+.TP
+.BR \-\-discovery " \fIURL\fR"
+Discovery lookup URL. Defaults to the global Syncthing endpoint.
+.TP
+.B \-\-direct
+Try direct TCP connections to the server's known IPs before falling back to a relay connection. (default true)
+.SH GENERAL OPTIONS
+.TP
+.BR \-\-log\-level " \fILEVEL\fR"
+Log level (trace, debug, info, warn, error). Default is info.
+.TP
+.BR \-\-log\-format " \fIFORMAT\fR"
+Log format (auto, text, json, journald). Default is auto.
+.SH BEHAVIOUR & EDGE CASES
+.TP
+.B NAT Traversal & Fallback
+WebRTC ICE traversal can negotiate direct connections through many complex NAT topologies (Full Cone, Restricted, etc.). However, if both ends are behind strict Symmetric NATs, ICE negotiation may fail. In this case, the connection transparently falls back to using the Syncthing relay for all traffic.
+.TP
+.B Multiplexing
+Features like \fB\-\-socks\fR and \fB\-\-shell\fR rely on the \fByamux\fR multiplexer. Both the client and the server must use the corresponding flags to successfully communicate. If a client attempts a raw pipe connection to a multiplexed server, a protocol mismatch error will occur.
+.TP
+.B Shell on Windows
+The Windows OS lacks native Pseudo-Terminal (PTY) support in the traditional Unix sense. When running the \fB\-\-shell\fR server on Windows, a "Fake PTY" wrapper is used. This wrapper manually translates Unix line endings (\\r to \\r\\n) and echoes input back to the client. Dynamic terminal resizing is not supported on Windows.
+.SH EXAMPLES
+.PP
+.B 1. Raw Data Pipe
+.br
+Pipe a tar archive across the internet securely without port forwarding.
+.RS
+.B Server:
+.br
+tar czf \- ./data | syncthing-socket server \-\-passphrase my-secret
+.br
+.B Client:
+.br
+syncthing-socket client \-\-passphrase my-secret <SERVER-ID> | tar xzf \-
+.RE
+.PP
+.B 2. Remote Shell
+.br
+Start an interactive terminal session on a remote machine.
+.RS
+.B Server:
+.br
+syncthing-socket server \-\-shell \-\-passphrase secret123
+.br
+.B Client:
+.br
+syncthing-socket client \-\-shell \-\-passphrase secret123 <SERVER-ID>
+.RE
+.PP
+.B 3. SOCKS5 Proxy
+.br
+Tunnel web traffic through the server acting as an exit node.
+.RS
+.B Server:
+.br
+syncthing-socket server \-\-socks
+.br
+.B Client:
+.br
+syncthing-socket client \-\-socks 127.0.0.1:1080 <SERVER-ID>
+.br
+.I (You can now configure your browser to use SOCKS5 proxy on localhost:1080)
+.RE
+.PP
+.B 4. Remote Command Execution
+.br
+Trigger a specific command on the server and receive the output.
+.RS
+.B Server:
+.br
+syncthing-socket server \-\-command "grep 'error' /var/log/syslog"
+.br
+.B Client:
+.br
+syncthing-socket client <SERVER-ID>
+.RE
+.SH AUTHORS
+Written by the syncthing-socket contributors.
