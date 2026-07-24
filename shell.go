@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 
 	"github.com/hashicorp/yamux"
 	"golang.org/x/term"
@@ -143,8 +144,12 @@ func runCommandServer(conn net.Conn, commandStr string) {
 		return
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	// Route stderr to our structured logging system
 	go func() {
+		defer wg.Done()
 		scanner := bufio.NewScanner(stderrPipe)
 		for scanner.Scan() {
 			slog.Warn("Command stderr", "output", scanner.Text())
@@ -157,6 +162,7 @@ func runCommandServer(conn net.Conn, commandStr string) {
 	}()
 
 	go func() {
+		defer wg.Done()
 		CopyWithTrace(conn, stdoutPipe, "stdout->remote")
 	}()
 
@@ -165,6 +171,7 @@ func runCommandServer(conn net.Conn, commandStr string) {
 		return
 	}
 
+	wg.Wait()
 	err = cmd.Wait()
 	if err != nil {
 		slog.Info("Command exited with error", "error", err)
