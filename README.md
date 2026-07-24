@@ -11,7 +11,7 @@ A netcat-like client/server utility that allows two endpoints to communicate bi-
 - **Cryptographic Device Verification:** Identifies and authenticates endpoints by hashing their TLS certificates to generate unique Syncthing **Device IDs**, preventing man-in-the-middle attacks.
 - **Global Discovery:** Server registers itself dynamically in the Syncthing global announce directory (`discovery.syncthing.net`), allowing clients to look up and connect to the server using only its Device ID.
 - **Interactive Shell:** Built-in pseudo-terminal (PTY) shell mode (`-shell`) natively replaces SSH, perfectly forwarding terminal sizes for interactive tools like `vim` or `htop`.
-- **Remote Command Execution:** Execute an arbitrary command for each connection and pipe its input/output over the tunnel (`-command`).
+- **Remote Command Execution:** Execute an arbitrary command for each connection and pipe its input/output over the tunnel (`--command`).
 - **SOCKS5 Proxy:** Built-in multiplexed remote SOCKS proxy (`-socks`).
 - **Netcat-style:** Pipes standard input (`stdin`) and standard output (`stdout`) bi-directionally between endpoints.
 
@@ -52,18 +52,18 @@ Or simply:
 ```
 
 #### Server Options:
-- `-shell`: Start a fully interactive PTY shell daemon (replaces SSH).
+- `--shell`: Start a fully interactive PTY shell daemon (replaces SSH).
 - `--command "<cmd>"`: Spawn an arbitrary command (e.g. `bash -c "<cmd>"`) for each incoming connection and pipe its standard input and output over the tunnel.
-- `-socks`: Start a remote SOCKS5 proxy server.
-- `-passphrase <secret>`: Deterministically generates a secure TLS certificate and Device ID from a secret password, so you don't need to copy-paste long Device IDs.
-- `-cert <path>`: Custom TLS certificate path (default: empty, runs in-memory).
-- `-key <path>`: Custom TLS key path (default: empty, runs in-memory).
-- `-relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
-- `-discovery <urls>`: Comma-separated list of global announce directories.
-- `-direct-port <port>`: Enable direct TCP connection listening on this port (0 to disable, default: 0).
-- `-authorized-clients <ids>`: Comma-separated list of authorized client Syncthing Device IDs. When specified, only clients with matching Device IDs are allowed to connect; unauthorized clients are rejected post-handshake.
-- `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
-- `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
+- `--socks`: Start a remote SOCKS5 proxy server.
+- `--passphrase <secret>`: Deterministically generates a secure TLS certificate and Device ID from a secret password, so you don't need to copy-paste long Device IDs.
+- `--cert <path>`: Custom TLS certificate path (default: empty, runs in-memory).
+- `--key <path>`: Custom TLS key path (default: empty, runs in-memory).
+- `--relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
+- `--discovery <urls>`: Comma-separated list of global announce directories.
+- `--direct-port <port>`: Enable direct TCP connection listening on this port (0 to disable, default: 0).
+- `--authorized-clients <ids>`: Comma-separated list of authorized client Syncthing Device IDs. When specified, only clients with matching Device IDs are allowed to connect; unauthorized clients are rejected post-handshake.
+- `--log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
+- `--log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
 ---
 
@@ -86,21 +86,21 @@ Connect directly using the connection string printed by the server:
 ```
 
 #### Option C: Bypassing Discovery via Flags
-Specify the relay address manually via the `-relay` flag:
+Specify the relay address manually via the `--relay` flag:
 
 ```bash
 ./syncthing-socket client --relay "<RELAY_URI>" <SERVER_DEVICE_ID>
 ```
 
 #### Client Options:
-- `-shell`: Put the local terminal in raw mode and connect to a remote `-shell` server.
-- `-socks <address>`: Spin up a local SOCKS5 proxy on this address (e.g. `127.0.0.1:10800`).
-- `-passphrase <secret>`: Use the same passphrase as the server to auto-discover and connect without needing the Server Device ID!
-- `-cert <path>` / `-key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
-- `-discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
-- `-direct`: Attempt direct P2P connections via WebRTC ICE (UDP NAT Hole Punching) and direct TCP before seamlessly falling back to relay. Set `-direct=false` to disable ICE and force relay connections (default: true).
-- `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
-- `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
+- `--shell`: Put the local terminal in raw mode and connect to a remote `--shell` server.
+- `--socks <address>`: Spin up a local SOCKS5 proxy on this address (e.g. `127.0.0.1:10800`).
+- `--passphrase <secret>`: Use the same passphrase as the server to auto-discover and connect without needing the Server Device ID!
+- `--cert <path>` / `--key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
+- `--discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
+- `--direct`: Attempt direct P2P connections via WebRTC ICE (UDP NAT Hole Punching) and direct TCP before seamlessly falling back to relay. Set `--direct=false` to disable ICE and force relay connections (default: true).
+- `--log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
+- `--log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
 ---
 
@@ -122,7 +122,7 @@ This spawns a remote bash session and pipes your raw local terminal directly int
 
 ## Advanced: Remote Command Execution
 
-If you want to just trigger a script, pipe data into a command, or build a simple authenticated remote execution API, you can use the `-command` flag.
+If you want to just trigger a script, pipe data into a command, or build a simple authenticated remote execution API, you can use the `--command` flag.
 
 **On the Server:**
 ```bash
@@ -139,7 +139,7 @@ echo "log data with error" | ./syncthing-socket client --passphrase "my-secret"
 
 ## Utility: Deterministic Device IDs
 
-If you are using the `-passphrase` flag instead of explicit TLS certificates, `syncthing-socket` mathematically derives unique cryptographic keys from your secret phrase. To prevent reflection attacks (where a malicious actor routes your client back to itself), the client and server intentionally use different cryptographic suffixes during derivation.
+If you are using the `--passphrase` flag instead of explicit TLS certificates, `syncthing-socket` mathematically derives unique cryptographic keys from your secret phrase. To prevent reflection attacks (where a malicious actor routes your client back to itself), the client and server intentionally use different cryptographic suffixes during derivation.
 
 If you are curious what your Syncthing Device IDs will be for a given passphrase, you can use the `id` subcommand:
 
