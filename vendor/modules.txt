@@ -4,12 +4,24 @@ github.com/armon/go-socks5
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
+# github.com/blacktop/go-termimg v0.1.20
+## explicit; go 1.24
+github.com/blacktop/go-termimg
+github.com/blacktop/go-termimg/pkg/csi
 # github.com/calmh/xdr v1.2.0
 ## explicit; go 1.20
 github.com/calmh/xdr
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/charmbracelet/x/ansi v0.9.3
+## explicit; go 1.23.0
+github.com/charmbracelet/x/ansi
+github.com/charmbracelet/x/ansi/kitty
+github.com/charmbracelet/x/ansi/parser
+# github.com/charmbracelet/x/mosaic v0.0.0-20250702191427-5bdfc8f2e4ff
+## explicit; go 1.23.0
+github.com/charmbracelet/x/mosaic
 # github.com/coreos/go-systemd/v22 v22.7.0
 ## explicit; go 1.23
 github.com/coreos/go-systemd/v22/journal
@@ -37,6 +49,18 @@ github.com/hashicorp/golang-lru/v2/simplelru
 # github.com/hashicorp/yamux v0.1.2
 ## explicit; go 1.20
 github.com/hashicorp/yamux
+# github.com/lucasb-eyer/go-colorful v1.2.0
+## explicit; go 1.12
+github.com/lucasb-eyer/go-colorful
+# github.com/makeworld-the-better-one/dither/v2 v2.4.0
+## explicit; go 1.15
+github.com/makeworld-the-better-one/dither/v2
+# github.com/mattn/go-runewidth v0.0.16
+## explicit; go 1.9
+github.com/mattn/go-runewidth
+# github.com/mattn/go-sixel v0.0.5
+## explicit; go 1.16
+github.com/mattn/go-sixel
 # github.com/miscreant/miscreant.go v0.0.0-20200214223636-26d376326b75
 ## explicit; go 1.12
 github.com/miscreant/miscreant.go
@@ -46,6 +70,9 @@ github.com/miscreant/miscreant.go/pmac
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
+# github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
+## explicit
+github.com/nfnt/resize
 # github.com/pierrec/lz4/v4 v4.1.22
 ## explicit; go 1.14
 github.com/pierrec/lz4/v4
@@ -180,11 +207,19 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
+# github.com/rivo/uniseg v0.4.7
+## explicit; go 1.18
+github.com/rivo/uniseg
 # github.com/shirou/gopsutil/v4 v4.25.4
 ## explicit; go 1.23
 github.com/shirou/gopsutil/v4/common
 github.com/shirou/gopsutil/v4/disk
 github.com/shirou/gopsutil/v4/internal/common
+# github.com/soniakeys/quant v1.0.0
+## explicit
+github.com/soniakeys/quant
+github.com/soniakeys/quant/internal
+github.com/soniakeys/quant/median
 # github.com/spf13/pflag v1.0.10
 ## explicit; go 1.12
 github.com/spf13/pflag
@@ -230,6 +265,10 @@ golang.org/x/crypto/internal/alias
 golang.org/x/crypto/internal/poly1305
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/scrypt
+# golang.org/x/image v0.25.0
+## explicit; go 1.23.0
+golang.org/x/image/draw
+golang.org/x/image/math/f64
 # golang.org/x/net v0.50.0
 ## explicit; go 1.24.0
 golang.org/x/net/bpf

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	_ "embed"
 	"encoding/json"
 	flag "github.com/spf13/pflag"
 	"fmt"
@@ -17,9 +19,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/blacktop/go-termimg"
 	syncthingprotocol "github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/relay/client"
 	"github.com/syncthing/syncthing/lib/tlsutil"
+	"golang.org/x/term"
 )
 
 // Logging setup is in logging.go
@@ -216,7 +220,22 @@ func main() {
 	}
 }
 
+//go:embed assets/logo.png
+var logoPNG []byte
+
+//go:embed assets/logo.ansi
+var logoANSI string
+
 func printUsage() {
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width >= 75 {
+		if img, err := termimg.From(bytes.NewReader(logoPNG)); err == nil {
+			if renderer, err := img.GetRenderer(); err == nil && renderer.Protocol() == termimg.Halfblocks {
+				fmt.Print(logoANSI)
+			} else {
+				img.Height(25).Width(80).Scale(termimg.ScaleFit).Print()
+			}
+		}
+	}
 	fmt.Println("Usage: syncthing-socket <command> [options]")
 	fmt.Println("Commands:")
 	fmt.Println("  server    Start the listening server")

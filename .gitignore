@@ -11,3 +11,4 @@ local/
 # Test binaries
 test-*
 /dist/
+.venv/

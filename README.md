@@ -1,5 +1,8 @@
 # Syncthing Socket
 
+<div align="center">
+  <img src="assets/logo.svg" alt="Syncthing Socket Logo" width="400">
+</div>
 A netcat-like client/server utility that allows two endpoints to communicate bi-directionally even when both are behind a NAT, leveraging the public **Syncthing Relay Network** and **Global Discovery Directory**.
 
 ## Key Features
