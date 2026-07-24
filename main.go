@@ -6,7 +6,7 @@ import (
 	"crypto/tls"
 	_ "embed"
 	"encoding/json"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 	"fmt"
 	"io"
 	"log/slog"
@@ -34,214 +34,247 @@ func isTraceEnabled() bool {
 	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
 }
 
+
+// Global variables to hold flag values
+var (
+	serverCert       string
+	serverKey        string
+	serverPassphrase string
+	serverSocks      bool
+	serverShell      bool
+	serverCommand    string
+	serverRelay      string
+	serverDiscovery  string
+	serverForward    string
+	serverDirectPort int
+	serverLogLevel   string
+	serverLogFormat  string
+
+	clientCert       string
+	clientKey        string
+	clientPassphrase string
+	clientSocks      string
+	clientShell      bool
+	clientRelay      string
+	clientDiscovery  string
+	clientTryDirect  bool
+	clientLogLevel   string
+	clientLogFormat  string
+
+	idPassphrase string
+
+	//go:embed assets/logo.png
+	logoPNG []byte
+
+	//go:embed assets/logo.ansi
+	logoANSI string
+)
+
 func main() {
 	setupProxyEnvironment()
 
-	serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
-	serverCert := serverCmd.String("cert", "", "Path to TLS certificate (optional)")
-	serverKey := serverCmd.String("key", "", "Path to TLS key (optional)")
-	serverPassphrase := serverCmd.String("passphrase", "", "Passphrase to deterministically generate the TLS certificate")
-	serverSocks := serverCmd.Bool("socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
-	serverShell := serverCmd.Bool("shell", false, "Start an interactive PTY shell server")
-	serverCommand := serverCmd.String("command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
-	serverRelay := serverCmd.String("relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
-	serverDiscovery := serverCmd.String("discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
-	serverForward := serverCmd.String("forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
-	serverDirectPort := serverCmd.Int("direct-port", 0, "Enable direct TCP connection listening on this port (0 to disable)")
-	serverLogLevel := serverCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
-	serverLogFormat := serverCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
-
-	clientCmd := flag.NewFlagSet("client", flag.ExitOnError)
-	clientCert := clientCmd.String("cert", "", "Path to TLS certificate (optional)")
-	clientKey := clientCmd.String("key", "", "Path to TLS key (optional)")
-	clientPassphrase := clientCmd.String("passphrase", "", "Passphrase to deterministically generate the TLS certificate")
-	clientSocks := clientCmd.String("socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
-	clientShell := clientCmd.Bool("shell", false, "Start an interactive PTY shell client")
-	clientRelay := clientCmd.String("relay", "", "Relay URI (if specified, bypasses discovery lookup)")
-	clientDiscovery := clientCmd.String("discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
-	clientTryDirect := clientCmd.Bool("direct", true, "Try direct TCP connections before falling back to relay")
-	clientLogLevel := clientCmd.String("log-level", "info", "Log level (trace, debug, info, warn, error)")
-	clientLogFormat := clientCmd.String("log-format", "auto", "Log format (auto, text, json, journald)")
-
-	idCmd := flag.NewFlagSet("id", flag.ExitOnError)
-	idPassphrase := idCmd.String("passphrase", "", "Passphrase to compute the Syncthing ID for")
-
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+	var rootCmd = &cobra.Command{
+		Use:     "syncthing-socket",
+		Short:   "A netcat-like client/server utility leveraging Syncthing's P2P network",
+		Version: Version,
 	}
 
-	if os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version" {
-		fmt.Printf("syncthing-socket version %s\n", Version)
-		os.Exit(0)
-	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	switch os.Args[1] {
-	case "server":
-		serverCmd.Parse(os.Args[2:])
-		setupLogging(*serverLogLevel, *serverLogFormat)
-
-		if (*serverSocks && *serverShell) || (*serverSocks && *serverForward != "") || (*serverSocks && *serverCommand != "") || (*serverShell && *serverForward != "") || (*serverShell && *serverCommand != "") || (*serverForward != "" && *serverCommand != "") {
-			slog.Error("Error: --socks, --shell, --command, and --forward are mutually exclusive. Please specify only one mode.")
-			os.Exit(1)
-		}
-
-		var cert tls.Certificate
-		var err error
-		if *serverPassphrase != "" {
-			cert, err = generateDeterministicCert(*serverPassphrase + "server")
-		} else if *serverCert != "" && *serverKey != "" {
-			cert, err = loadOrGenerateCert(*serverCert, *serverKey)
-		} else if *serverCert == "" && *serverKey == "" {
-			cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-server", 365)
-		} else {
-			slog.Error("Error: both -cert and -key must be specified if one is provided")
-			os.Exit(1)
-		}
-		if err != nil {
-			slog.Error("Error getting server cert", "error", err)
-			os.Exit(1)
-		}
-		var discoveryServers []string
-		if *serverDiscovery != "" {
-			for _, ds := range strings.Split(*serverDiscovery, ",") {
-				ds = strings.TrimSpace(ds)
-				if ds != "" {
-					discoveryServers = append(discoveryServers, ds)
+	originalHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if cmd.Name() == "syncthing-socket" || cmd.Name() == "help" {
+			if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width >= 75 {
+				if img, err := termimg.From(bytes.NewReader(logoPNG)); err == nil {
+					if renderer, err := img.GetRenderer(); err == nil && renderer.Protocol() == termimg.Halfblocks {
+						fmt.Print(logoANSI)
+					} else {
+						img.Height(25).Width(80).Scale(termimg.ScaleFit).Print()
+					}
 				}
 			}
 		}
-		if err := runServer(ctx, cert, *serverRelay, discoveryServers, *serverForward, *serverDirectPort, *serverSocks, *serverShell, *serverCommand); err != nil {
-			slog.Error("Server error", "error", err)
-			os.Exit(1)
-		}
+		originalHelp(cmd, args)
+	})
 
-	case "client":
-		clientCmd.Parse(os.Args[2:])
-		setupLogging(*clientLogLevel, *clientLogFormat)
+	var serverCmd = &cobra.Command{
+		Use:   "server",
+		Short: "Start the listening server",
+		Run: func(cmd *cobra.Command, args []string) {
+			setupLogging(serverLogLevel, serverLogFormat)
 
-		if *clientSocks != "" && *clientShell {
-			slog.Error("Error: -socks and -shell are mutually exclusive. Please specify only one mode.")
-			os.Exit(1)
-		}
-
-		args := clientCmd.Args()
-		var targetStr string
-		if *clientPassphrase != "" {
-			if len(args) > 0 {
-				targetStr = args[0]
-			}
-		} else {
-			if len(args) < 1 {
-				fmt.Println("Error: client mode requires target server Device ID unless --passphrase is used")
-				clientCmd.Usage()
+			if (serverSocks && serverShell) || (serverSocks && serverForward != "") || (serverSocks && serverCommand != "") || (serverShell && serverForward != "") || (serverShell && serverCommand != "") || (serverForward != "" && serverCommand != "") {
+				slog.Error("Error: --socks, --shell, --command, and --forward are mutually exclusive. Please specify only one mode.")
 				os.Exit(1)
 			}
-			targetStr = args[0]
-		}
 
-		var serverID string
-		var relayURI string
-
-		if targetStr != "" && strings.Contains(targetStr, "@") {
-			parts := strings.SplitN(targetStr, "@", 2)
-			serverID = parts[0]
-			relayURI = parts[1]
-		} else if targetStr != "" {
-			serverID = targetStr
-			relayURI = *clientRelay
-		} else {
-			relayURI = *clientRelay
-		}
-
-		if *clientPassphrase != "" {
-			serverCert, _ := generateDeterministicCert(*clientPassphrase + "server")
-			derivedID := syncthingprotocol.NewDeviceID(serverCert.Certificate[0]).String()
-			if serverID == "" {
-				serverID = derivedID
-			} else if serverID != derivedID {
-				slog.Warn("Provided Server ID does not match the passphrase-derived Server ID", "provided", serverID, "derived", derivedID)
+			var cert tls.Certificate
+			var err error
+			if serverPassphrase != "" {
+				cert, err = generateDeterministicCert(serverPassphrase + "server")
+			} else if serverCert != "" && serverKey != "" {
+				cert, err = loadOrGenerateCert(serverCert, serverKey)
+			} else if serverCert == "" && serverKey == "" {
+				cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-server", 365)
+			} else {
+				slog.Error("Error: both --cert and --key must be specified if one is provided")
+				os.Exit(1)
 			}
-		}
+			if err != nil {
+				slog.Error("Error getting server cert", "error", err)
+				os.Exit(1)
+			}
+			var discoveryServers []string
+			if serverDiscovery != "" {
+				for _, ds := range strings.Split(serverDiscovery, ",") {
+					ds = strings.TrimSpace(ds)
+					if ds != "" {
+						discoveryServers = append(discoveryServers, ds)
+					}
+				}
+			}
+			
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			
+			if err := runServer(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand); err != nil {
+				slog.Error("Server error", "error", err)
+				os.Exit(1)
+			}
+		},
+	}
+	serverCmd.Flags().StringVar(&serverCert, "cert", "", "Path to TLS certificate (optional)")
+	serverCmd.Flags().StringVar(&serverKey, "key", "", "Path to TLS key (optional)")
+	serverCmd.Flags().StringVar(&serverPassphrase, "passphrase", "", "Passphrase to deterministically generate the TLS certificate")
+	serverCmd.Flags().BoolVar(&serverSocks, "socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
+	serverCmd.Flags().BoolVar(&serverShell, "shell", false, "Start an interactive PTY shell server")
+	serverCmd.Flags().StringVar(&serverCommand, "command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
+	serverCmd.Flags().StringVar(&serverRelay, "relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
+	serverCmd.Flags().StringVar(&serverDiscovery, "discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
+	serverCmd.Flags().StringVar(&serverForward, "forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
+	serverCmd.Flags().IntVar(&serverDirectPort, "direct-port", 0, "Enable direct TCP connection listening on this port (0 to disable)")
+	serverCmd.Flags().StringVar(&serverLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
+	serverCmd.Flags().StringVar(&serverLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
 
-		var cert tls.Certificate
-		var err error
-		if *clientPassphrase != "" {
-			cert, err = generateDeterministicCert(*clientPassphrase + "client")
-		} else if *clientCert != "" && *clientKey != "" {
-			cert, err = loadOrGenerateCert(*clientCert, *clientKey)
-		} else if *clientCert == "" && *clientKey == "" {
-			cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-client", 365)
-		} else {
-			slog.Error("Error: both -cert and -key must be specified if one is provided")
-			os.Exit(1)
-		}
-		if err != nil {
-			slog.Error("Error getting client cert", "error", err)
-			os.Exit(1)
-		}
+	var clientCmd = &cobra.Command{
+		Use:   "client [target]",
+		Short: "Connect to a server",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			setupLogging(clientLogLevel, clientLogFormat)
 
-		if err := runClient(ctx, serverID, relayURI, cert, *clientDiscovery, *clientTryDirect, *clientSocks, *clientShell); err != nil {
-			slog.Error("Client error", "error", err)
-			os.Exit(1)
-		}
+			if clientSocks != "" && clientShell {
+				slog.Error("Error: --socks and --shell are mutually exclusive. Please specify only one mode.")
+				os.Exit(1)
+			}
 
-	case "id":
-		idCmd.Parse(os.Args[2:])
-		if *idPassphrase == "" {
-			fmt.Println("Error: --passphrase is required")
-			os.Exit(1)
-		}
-		
-		serverCert, err := generateDeterministicCert(*idPassphrase + "server")
-		if err != nil {
-			fmt.Println("Error generating server cert:", err)
-			os.Exit(1)
-		}
-		serverID := syncthingprotocol.NewDeviceID(serverCert.Certificate[0])
-		
-		clientCert, err := generateDeterministicCert(*idPassphrase + "client")
-		if err != nil {
-			fmt.Println("Error generating client cert:", err)
-			os.Exit(1)
-		}
-		clientID := syncthingprotocol.NewDeviceID(clientCert.Certificate[0])
-		
-		fmt.Printf("Server ID: %s\n", serverID.String())
-		fmt.Printf("Client ID: %s\n", clientID.String())
-		os.Exit(0)
+			var targetStr string
+			if clientPassphrase != "" {
+				if len(args) > 0 {
+					targetStr = args[0]
+				}
+			} else {
+				if len(args) < 1 {
+					fmt.Println("Error: client mode requires target server Device ID unless --passphrase is used")
+					cmd.Usage()
+					os.Exit(1)
+				}
+				targetStr = args[0]
+			}
 
-	default:
-		printUsage()
+			var serverID string
+			var relayURI string
+
+			if targetStr != "" && strings.Contains(targetStr, "@") {
+				parts := strings.SplitN(targetStr, "@", 2)
+				serverID = parts[0]
+				relayURI = parts[1]
+			} else if targetStr != "" {
+				serverID = targetStr
+				relayURI = clientRelay
+			} else {
+				relayURI = clientRelay
+			}
+
+			if clientPassphrase != "" {
+				serverCertStruct, _ := generateDeterministicCert(clientPassphrase + "server")
+				derivedID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0]).String()
+				if serverID == "" {
+					serverID = derivedID
+				} else if serverID != derivedID {
+					slog.Warn("Provided Server ID does not match the passphrase-derived Server ID", "provided", serverID, "derived", derivedID)
+				}
+			}
+
+			var cert tls.Certificate
+			var err error
+			if clientPassphrase != "" {
+				cert, err = generateDeterministicCert(clientPassphrase + "client")
+			} else if clientCert != "" && clientKey != "" {
+				cert, err = loadOrGenerateCert(clientCert, clientKey)
+			} else if clientCert == "" && clientKey == "" {
+				cert, err = tlsutil.NewCertificateInMemory("syncthing-socket-client", 365)
+			} else {
+				slog.Error("Error: both --cert and --key must be specified if one is provided")
+				os.Exit(1)
+			}
+			if err != nil {
+				slog.Error("Error getting client cert", "error", err)
+				os.Exit(1)
+			}
+
+			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+
+			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell); err != nil {
+				slog.Error("Client error", "error", err)
+				os.Exit(1)
+			}
+		},
+	}
+	clientCmd.Flags().StringVar(&clientCert, "cert", "", "Path to TLS certificate (optional)")
+	clientCmd.Flags().StringVar(&clientKey, "key", "", "Path to TLS key (optional)")
+	clientCmd.Flags().StringVar(&clientPassphrase, "passphrase", "", "Passphrase to deterministically generate the TLS certificate")
+	clientCmd.Flags().StringVar(&clientSocks, "socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
+	clientCmd.Flags().BoolVar(&clientShell, "shell", false, "Start an interactive PTY shell client")
+	clientCmd.Flags().StringVar(&clientRelay, "relay", "", "Relay URI (if specified, bypasses discovery lookup)")
+	clientCmd.Flags().StringVar(&clientDiscovery, "discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
+	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
+	clientCmd.Flags().StringVar(&clientLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
+	clientCmd.Flags().StringVar(&clientLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
+
+	var idCmd = &cobra.Command{
+		Use:   "id",
+		Short: "Compute Device IDs from a passphrase",
+		Run: func(cmd *cobra.Command, args []string) {
+			if idPassphrase == "" {
+				fmt.Println("Error: --passphrase is required")
+				os.Exit(1)
+			}
+			
+			serverCertStruct, err := generateDeterministicCert(idPassphrase + "server")
+			if err != nil {
+				fmt.Println("Error generating server cert:", err)
+				os.Exit(1)
+			}
+			serverID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0])
+			
+			clientCertStruct, err := generateDeterministicCert(idPassphrase + "client")
+			if err != nil {
+				fmt.Println("Error generating client cert:", err)
+				os.Exit(1)
+			}
+			clientID := syncthingprotocol.NewDeviceID(clientCertStruct.Certificate[0])
+			
+			fmt.Printf("Server ID: %s\n", serverID.String())
+			fmt.Printf("Client ID: %s\n", clientID.String())
+		},
+	}
+	idCmd.Flags().StringVar(&idPassphrase, "passphrase", "", "Passphrase to compute the Syncthing ID for")
+
+	rootCmd.AddCommand(serverCmd, clientCmd, idCmd)
+
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
-}
-
-//go:embed assets/logo.png
-var logoPNG []byte
-
-//go:embed assets/logo.ansi
-var logoANSI string
-
-func printUsage() {
-	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width >= 75 {
-		if img, err := termimg.From(bytes.NewReader(logoPNG)); err == nil {
-			if renderer, err := img.GetRenderer(); err == nil && renderer.Protocol() == termimg.Halfblocks {
-				fmt.Print(logoANSI)
-			} else {
-				img.Height(25).Width(80).Scale(termimg.ScaleFit).Print()
-			}
-		}
-	}
-	fmt.Println("Usage: syncthing-socket <command> [options]")
-	fmt.Println("Commands:")
-	fmt.Println("  server    Start the listening server")
-	fmt.Println("  client    Connect to a server")
-	fmt.Println("  id        Compute Device IDs from a passphrase")
-	fmt.Println("Run 'syncthing-socket <command> -h' for options.")
 }
 
 func loadOrGenerateCert(certPath, keyPath string) (tls.Certificate, error) {

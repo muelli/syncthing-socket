@@ -144,5 +144,18 @@ syncthing-socket server \-\-command "grep 'error' /var/log/syslog"
 .br
 syncthing-socket client <SERVER-ID>
 .RE
+.PP
+.B 5. Shell Completions
+.br
+Generate auto-completion scripts for your shell.
+.RS
+.B Bash (current session):
+.br
+source <(syncthing-socket completion bash)
+.br
+.B See specific instructions for your shell:
+.br
+syncthing-socket completion [bash|zsh|fish|powershell] \-\-help
+.RE
 .SH AUTHORS
 Written by the syncthing-socket contributors.

@@ -203,6 +203,23 @@ Both the `server` and `client` natively respect standard proxy environment varia
 
 ---
 
+## Shell Completions
+
+`syncthing-socket` natively supports generating auto-completions for Bash, Zsh, Fish, and PowerShell.
+
+To load completions in your current shell session (e.g., Bash):
+```bash
+source <(syncthing-socket completion bash)
+```
+
+To permanently install them, read the help instructions for your specific shell:
+```bash
+syncthing-socket completion bash --help
+syncthing-socket completion fish --help
+```
+
+---
+
 ## Security Model
 
 1. **Relay Blindness:** The relay server acts purely as a TCP proxy. It cannot decrypt or read any data sent through it.
