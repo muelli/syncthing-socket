@@ -137,7 +137,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			
-			if err := runServer(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol); err != nil {
+			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol); err != nil {
 				slog.Error("Server error", "error", err)
 				os.Exit(1)
 			}
@@ -273,7 +273,19 @@ func main() {
 	}
 	idCmd.Flags().StringVar(&idPassphrase, "passphrase", "", "Passphrase to compute the Syncthing ID for")
 
-	rootCmd.AddCommand(serverCmd, clientCmd, idCmd)
+	installServiceCmd := &cobra.Command{
+		Use:   "install-service",
+		Short: "Install the server as a background system service",
+		DisableFlagParsing: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := runInstallService(args); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	rootCmd.AddCommand(serverCmd, clientCmd, idCmd, installServiceCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

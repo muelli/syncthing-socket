@@ -8,6 +8,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creack/pty v1.1.24
 	github.com/hashicorp/yamux v0.1.2
+	github.com/kardianos/service v1.3.0
 	github.com/pion/webrtc/v4 v4.2.17
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/spf13/cobra v1.10.2
