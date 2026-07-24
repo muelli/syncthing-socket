@@ -41,6 +41,15 @@ func getClientDeviceID(t *testing.T, clientPassphrase string) string {
 	return syncthingprotocol.NewDeviceID(cert.Certificate[0]).String()
 }
 
+func getServerDeviceID(t *testing.T, serverPassphrase string) string {
+	cert, err := generateDeterministicCert(serverPassphrase + "server")
+	if err != nil {
+		t.Fatalf("Failed to generate cert for server passphrase %q: %v", serverPassphrase, err)
+	}
+	return syncthingprotocol.NewDeviceID(cert.Certificate[0]).String()
+}
+
+
 func buildTestAuthBinary(t *testing.T) {
 	cmdBuild := exec.Command("go", "build", "-o", "test-auth-binary", ".")
 	if err := cmdBuild.Run(); err != nil {
@@ -63,7 +72,7 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
 		"--passphrase", "server-auth-pass-1",
-		"--command", "echo 'unauthorized connection should not execute command'",
+		"--command", "echo 'unauthorized connection should not execute command' && sleep 0.5",
 		"--direct-port", "22010",
 		"--discovery", "",
 		"--relay", "",
@@ -84,6 +93,8 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
+	serverDevID := getServerDeviceID(t, "server-auth-pass-1")
+
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
 		"--passphrase", unauthClientPass,
@@ -91,6 +102,7 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 		"--discovery", "",
 		"--log-level", "debug",
 		"--log-format", "text",
+		serverDevID,
 	)
 
 	var clientOut bytes.Buffer
@@ -131,7 +143,7 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
 		"--passphrase", "server-auth-pass-2",
-		"--command", "echo 'authorized client success'",
+		"--command", "echo 'authorized client success' && sleep 0.5",
 		"--direct-port", "22011",
 		"--discovery", "",
 		"--relay", "",
@@ -152,6 +164,8 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
+	serverDevID := getServerDeviceID(t, "server-auth-pass-2")
+
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
 		"--passphrase", authClientPass,
@@ -159,11 +173,14 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 		"--discovery", "",
 		"--log-level", "debug",
 		"--log-format", "text",
+		serverDevID,
 	)
 
-	var clientOut bytes.Buffer
-	cmdClient.Stdout = &clientOut
+	clientOut := &SafeBuffer{}
+	cmdClient.Stdout = clientOut
 	cmdClient.Stderr = os.Stderr
+	stdin, _ := cmdClient.StdinPipe()
+	defer stdin.Close()
 
 	if err := cmdClient.Start(); err != nil {
 		t.Fatalf("Failed to start client: %v", err)
@@ -200,7 +217,7 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
 		"--passphrase", "server-auth-pass-3",
-		"--command", "echo 'default no auth flag success'",
+		"--command", "echo 'default no auth flag success' && sleep 0.5",
 		"--direct-port", "22012",
 		"--discovery", "",
 		"--relay", "",
@@ -220,6 +237,8 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
+	serverDevID := getServerDeviceID(t, "server-auth-pass-3")
+
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
 		"--passphrase", clientPass,
@@ -227,11 +246,14 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 		"--discovery", "",
 		"--log-level", "debug",
 		"--log-format", "text",
+		serverDevID,
 	)
 
-	var clientOut bytes.Buffer
-	cmdClient.Stdout = &clientOut
+	clientOut := &SafeBuffer{}
+	cmdClient.Stdout = clientOut
 	cmdClient.Stderr = os.Stderr
+	stdin, _ := cmdClient.StdinPipe()
+	defer stdin.Close()
 
 	if err := cmdClient.Start(); err != nil {
 		t.Fatalf("Failed to start client: %v", err)
