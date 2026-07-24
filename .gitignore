@@ -12,3 +12,6 @@ local/
 test-*
 /dist/
 .venv/
+
+# Antigravity multi-agent workspace
+.agents/
