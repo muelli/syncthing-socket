@@ -48,6 +48,12 @@ Start an interactive PTY shell server. The client must also specify \-\-shell to
 .BR \-\-command " \fICOMMAND\fR"
 Execute a specific shell command for each incoming connection and pipe its stdin/stdout over the tunnel.
 .TP
+.BR \-\-forward " \fIHOST:PORT\fR"
+Forward incoming connections to this host:port (e.g. 127.0.0.1:22).
+.TP
+.BR \-\-reverse\-forward " \fIBIND_ADDRESS\fR"
+Bind a local port and reverse-forward incoming connections to the client (e.g. 0.0.0.0:8080).
+.TP
 .BR \-\-direct\-port " \fIPORT\fR"
 Enable a direct TCP listener on the specified port. Used for bypassing relays completely in local environments (0 to disable).
 .TP
@@ -57,6 +63,9 @@ Specify a custom Syncthing relay URI or dynamic pool URL. Defaults to the global
 .BR \-\-discovery " \fIURL\fR"
 Comma-separated discovery announce URLs. Set to empty string ("") to disable discovery announcements.
 .SH CLIENT OPTIONS
+.TP
+.BR \-\-reverse\-forward " \fITARGET_ADDRESS\fR"
+Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80).
 .TP
 .BR \-\-socks " \fIADDRESS\fR"
 Start a local SOCKS5 proxy on the given address (e.g. 127.0.0.1:1080) and tunnel traffic to the server.
@@ -167,6 +176,19 @@ source <(syncthing-socket completion bash)
 .B See specific instructions for your shell:
 .br
 syncthing-socket completion [bash|zsh|fish|powershell] \-\-help
+.RE
+.PP
+.B 7. Reverse Port Forwarding
+.br
+Expose a local service behind a NAT to the internet by routing traffic backward through a server.
+.RS
+.B Server (Public VPS):
+.br
+syncthing-socket server \-\-passphrase my-secret \-\-reverse-forward 0.0.0.0:8080
+.br
+.B Client (Local Machine):
+.br
+syncthing-socket client \-\-passphrase my-secret \-\-reverse-forward 127.0.0.1:8000
 .RE
 .SH AUTHORS
 Written by the syncthing-socket contributors.

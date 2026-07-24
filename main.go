@@ -48,6 +48,7 @@ var (
 	serverRelay      string
 	serverDiscovery  string
 	serverForward    string
+	serverReverseForward string
 	serverDirectPort int
 	serverLogLevel   string
 	serverLogFormat  string
@@ -57,6 +58,7 @@ var (
 	clientPassphrase string
 	clientSocks      string
 	clientShell      bool
+	clientReverseForward string
 	clientRelay      string
 	clientDiscovery  string
 	clientTryDirect  bool
@@ -103,8 +105,15 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			setupLogging(serverLogLevel, serverLogFormat)
 
-			if (serverSocks && serverShell) || (serverSocks && serverForward != "") || (serverSocks && serverCommand != "") || (serverShell && serverForward != "") || (serverShell && serverCommand != "") || (serverForward != "" && serverCommand != "") {
-				slog.Error("Error: --socks, --shell, --command, and --forward are mutually exclusive. Please specify only one mode.")
+			modes := 0
+			if serverSocks { modes++ }
+			if serverShell { modes++ }
+			if serverCommand != "" { modes++ }
+			if serverForward != "" { modes++ }
+			if serverReverseForward != "" { modes++ }
+			
+			if modes > 1 {
+				slog.Error("Error: --socks, --shell, --command, --forward, and --reverse-forward are mutually exclusive. Please specify only one mode.")
 				os.Exit(1)
 			}
 
@@ -137,7 +146,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			
-			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol); err != nil {
+			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol, serverReverseForward); err != nil {
 				slog.Error("Server error", "error", err)
 				os.Exit(1)
 			}
@@ -153,6 +162,7 @@ func main() {
 	serverCmd.Flags().StringVar(&serverRelay, "relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverCmd.Flags().StringVar(&serverDiscovery, "discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverCmd.Flags().StringVar(&serverForward, "forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
+	serverCmd.Flags().StringVar(&serverReverseForward, "reverse-forward", "", "Bind a local port and reverse-forward incoming connections to the client (e.g. 0.0.0.0:8080)")
 	serverCmd.Flags().IntVar(&serverDirectPort, "direct-port", 0, "Enable direct TCP connection listening on this port (0 to disable)")
 	serverCmd.Flags().StringVar(&serverLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	serverCmd.Flags().StringVar(&serverLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
@@ -164,8 +174,13 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			setupLogging(clientLogLevel, clientLogFormat)
 
-			if clientSocks != "" && clientShell {
-				slog.Error("Error: --socks and --shell are mutually exclusive. Please specify only one mode.")
+			modes := 0
+			if clientSocks != "" { modes++ }
+			if clientShell { modes++ }
+			if clientReverseForward != "" { modes++ }
+
+			if modes > 1 {
+				slog.Error("Error: --socks, --shell, and --reverse-forward are mutually exclusive. Please specify only one mode.")
 				os.Exit(1)
 			}
 
@@ -227,7 +242,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell); err != nil {
+			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward); err != nil {
 				slog.Error("Client error", "error", err)
 				os.Exit(1)
 			}
@@ -238,6 +253,7 @@ func main() {
 	clientCmd.Flags().StringVar(&clientPassphrase, "passphrase", "", "Passphrase to deterministically generate the TLS certificate")
 	clientCmd.Flags().StringVar(&clientSocks, "socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
 	clientCmd.Flags().BoolVar(&clientShell, "shell", false, "Start an interactive PTY shell client")
+	clientCmd.Flags().StringVar(&clientReverseForward, "reverse-forward", "", "Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80)")
 	clientCmd.Flags().StringVar(&clientRelay, "relay", "", "Relay URI (if specified, bypasses discovery lookup)")
 	clientCmd.Flags().StringVar(&clientDiscovery, "discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
 	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
@@ -407,7 +423,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -439,6 +455,8 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		extraFlags = " --shell"
 	} else if isSocks {
 		extraFlags = " --socks 127.0.0.1:1080"
+	} else if reverseForward != "" {
+		extraFlags = " --reverse-forward 127.0.0.1:80"
 	}
 
 	var relayClient client.RelayClient
@@ -596,7 +614,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		select {
 		case info := <-connChan:
-			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand)
+			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand, reverseForward)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -604,7 +622,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string, reverseForward string) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -633,6 +651,8 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 			runShellServer(finalConn)
 		} else if isCommand != "" {
 			runCommandServer(finalConn, isCommand)
+		} else if reverseForward != "" {
+			runReverseForwardServer(finalConn, reverseForward)
 		} else {
 			defer finalConn.Close()
 			pipeBiDirectional(finalConn)
@@ -654,7 +674,7 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 	}
 }
 
-func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool) error {
+func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string) error {
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)
@@ -725,7 +745,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 			}
 
 			slog.Info("Connected directly (bypassing relay)", "address", addrStr)
-			handleClientConn(ctx, tlsConn, localSocks, isShell)
+			handleClientConn(ctx, tlsConn, localSocks, isShell, reverseForward)
 			return nil
 		}
 		slog.Info("All direct TCP connections failed, falling back to relay...")
@@ -781,7 +801,7 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	
 	if !tryDirect {
 		slog.Info("Relay-only mode requested. Bypassing ICE.")
-		handleClientConn(ctx, tlsConn, localSocks, isShell)
+		handleClientConn(ctx, tlsConn, localSocks, isShell, reverseForward)
 		return nil
 	}
 
@@ -790,21 +810,23 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	if err != nil {
 		slog.Warn("ICE negotiation failed, falling back to relay", "error", err)
 		sendSignal(tlsConn, SignalMessage{Type: "fallback"})
-		handleClientConn(ctx, tlsConn, localSocks, isShell)
+		handleClientConn(ctx, tlsConn, localSocks, isShell, reverseForward)
 		return nil
 	}
 
 	slog.Info("Direct P2P ICE connection established! Closing relay.")
 	tlsConn.Close()
-	handleClientConn(ctx, p2pConn, localSocks, isShell)
+	handleClientConn(ctx, p2pConn, localSocks, isShell, reverseForward)
 	return nil
 }
 
-func handleClientConn(ctx context.Context, finalConn net.Conn, localSocks string, isShell bool) {
+func handleClientConn(ctx context.Context, finalConn net.Conn, localSocks string, isShell bool, reverseForward string) {
 	if localSocks != "" {
 		runSocksClient(ctx, finalConn, localSocks)
 	} else if isShell {
 		runShellClient(ctx, finalConn)
+	} else if reverseForward != "" {
+		runReverseForwardClient(ctx, finalConn, reverseForward)
 	} else {
 		defer finalConn.Close()
 		pipeBiDirectional(finalConn)

@@ -192,6 +192,24 @@ ssh my-nat-server
 
 ---
 
+## Advanced: Reverse Port Forwarding
+
+You can expose a local service (e.g., a development web server) to the internet by routing traffic backward through a `syncthing-socket` server running on a public VPS. This acts exactly like SSH `-R`.
+
+**1. On the Server (Public VPS):**
+```bash
+./syncthing-socket server --passphrase my-secret --reverse-forward 0.0.0.0:8080
+```
+
+**2. On the Client (Local Machine):**
+```bash
+./syncthing-socket client --passphrase my-secret --reverse-forward 127.0.0.1:8000
+```
+
+Now, anyone accessing `http://<VPS-IP>:8080` will securely hit your local service on port 8000. Under the hood, this uses `yamux` multiplexing over the P2P tunnel to handle multiple concurrent HTTP requests seamlessly!
+
+---
+
 ## Proxy Support
 
 Both the `server` and `client` natively respect standard proxy environment variables to help bypass restrictive firewalls.

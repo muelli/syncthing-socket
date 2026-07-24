@@ -21,12 +21,13 @@ type serverService struct {
 	isShell          bool
 	isCommand        string
 	proxyProtocol    bool
+	reverseForward   string
 }
 
 func (p *serverService) Start(s service.Service) error {
 	p.ctx, p.cancel = context.WithCancel(context.Background())
 	go func() {
-		if err := runServer(p.ctx, p.cert, p.relayURI, p.discoveryServers, p.forwardAddr, p.directPort, p.isSocks, p.isShell, p.isCommand, p.proxyProtocol); err != nil {
+		if err := runServer(p.ctx, p.cert, p.relayURI, p.discoveryServers, p.forwardAddr, p.directPort, p.isSocks, p.isShell, p.isCommand, p.proxyProtocol, p.reverseForward); err != nil {
 			slog.Error("Server error", "error", err)
 		}
 	}()
@@ -41,7 +42,7 @@ func (p *serverService) Stop(s service.Service) error {
 }
 
 // runServerWrapper wraps the execution in kardianos/service to support Windows SCM
-func runServerWrapper(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool) error {
+func runServerWrapper(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string) error {
 	svcConfig := &service.Config{
 		Name:        "syncthing-socket",
 		DisplayName: "Syncthing Socket",
@@ -58,6 +59,7 @@ func runServerWrapper(ctx context.Context, cert tls.Certificate, relayURI string
 		isShell:          isShell,
 		isCommand:        isCommand,
 		proxyProtocol:    proxyProtocol,
+		reverseForward:   reverseForward,
 	}
 
 	s, err := service.New(prg, svcConfig)
@@ -69,7 +71,7 @@ func runServerWrapper(ctx context.Context, cert tls.Certificate, relayURI string
 		// Just run it directly with the provided context
 		prg.ctx, prg.cancel = context.WithCancel(ctx)
 		defer prg.cancel()
-		return runServer(prg.ctx, cert, relayURI, discoveryServers, forwardAddr, directPort, isSocks, isShell, isCommand, proxyProtocol)
+		return runServer(prg.ctx, cert, relayURI, discoveryServers, forwardAddr, directPort, isSocks, isShell, isCommand, proxyProtocol, reverseForward)
 	}
 
 	// Running as a service (e.g. Windows SCM)
