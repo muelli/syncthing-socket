@@ -49,6 +49,7 @@ var (
 	serverDiscovery  string
 	serverForward    string
 	serverReverseForward string
+	serverAuthorizedClients string
 	serverDirectPort int
 	serverLogLevel   string
 	serverLogFormat  string
@@ -143,10 +144,25 @@ func main() {
 				}
 			}
 			
+			var authorizedClients []syncthingprotocol.DeviceID
+			if serverAuthorizedClients != "" {
+				for _, idStr := range strings.Split(serverAuthorizedClients, ",") {
+					idStr = strings.TrimSpace(idStr)
+					if idStr != "" {
+						devID, err := syncthingprotocol.DeviceIDFromString(idStr)
+						if err != nil {
+							slog.Error("Invalid authorized client Device ID", "device_id", idStr, "error", err)
+							os.Exit(1)
+						}
+						authorizedClients = append(authorizedClients, devID)
+					}
+				}
+			}
+
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			
-			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol, serverReverseForward); err != nil {
+			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol, serverReverseForward, authorizedClients); err != nil {
 				slog.Error("Server error", "error", err)
 				os.Exit(1)
 			}
@@ -164,6 +180,7 @@ func main() {
 	serverCmd.Flags().StringVar(&serverForward, "forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
 	serverCmd.Flags().StringVar(&serverReverseForward, "reverse-forward", "", "Bind a local port and reverse-forward incoming connections to the client (e.g. 0.0.0.0:8080)")
 	serverCmd.Flags().IntVar(&serverDirectPort, "direct-port", 0, "Enable direct TCP connection listening on this port (0 to disable)")
+	serverCmd.Flags().StringVar(&serverAuthorizedClients, "authorized-clients", "", "Comma-separated list of authorized client Syncthing Device IDs")
 	serverCmd.Flags().StringVar(&serverLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	serverCmd.Flags().StringVar(&serverLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
 
@@ -423,7 +440,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string, authorizedClients []syncthingprotocol.DeviceID) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -533,7 +550,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						return
 					}
 					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
-					go handleForwardConn(conn, cert, forwardAddr, false, proxyProtocol)
+					go handleForwardConn(conn, cert, forwardAddr, false, proxyProtocol, authorizedClients)
 				}
 			}()
 		}
@@ -552,7 +569,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						slog.Error("Failed to join session", "error", err)
 						continue
 					}
-					go handleForwardConn(conn, cert, forwardAddr, true, proxyProtocol)
+					go handleForwardConn(conn, cert, forwardAddr, true, proxyProtocol, authorizedClients)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -614,7 +631,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		select {
 		case info := <-connChan:
-			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand, reverseForward)
+			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand, reverseForward, authorizedClients)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -622,7 +639,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string, reverseForward string) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string, reverseForward string, authorizedClients []syncthingprotocol.DeviceID) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -637,8 +654,30 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 	}
 
 	state := tlsConn.ConnectionState()
-	if len(state.PeerCertificates) > 0 {
-		clientID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+	var clientID syncthingprotocol.DeviceID
+	hasCert := len(state.PeerCertificates) > 0
+	if hasCert {
+		clientID = syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+	}
+
+	if len(authorizedClients) > 0 {
+		authorized := false
+		if hasCert {
+			for _, authID := range authorizedClients {
+				if authID == clientID {
+					authorized = true
+					break
+				}
+			}
+		}
+		if !authorized {
+			slog.Warn("Unauthorized client connection attempt", "device_id", clientID.String())
+			tlsConn.Close()
+			return
+		}
+	}
+
+	if hasCert {
 		slog.Info("Connection established with client", "id", clientID.String())
 	} else {
 		slog.Info("Connection established with anonymous client")
@@ -852,7 +891,7 @@ func pipeBiDirectional(conn net.Conn) {
 	}
 }
 
-func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool, proxyProtocol bool) {
+func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool, proxyProtocol bool, authorizedClients []syncthingprotocol.DeviceID) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -867,8 +906,30 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 	}
 
 	state := tlsConn.ConnectionState()
-	if len(state.PeerCertificates) > 0 {
-		clientID := syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+	var clientID syncthingprotocol.DeviceID
+	hasCert := len(state.PeerCertificates) > 0
+	if hasCert {
+		clientID = syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+	}
+
+	if len(authorizedClients) > 0 {
+		authorized := false
+		if hasCert {
+			for _, authID := range authorizedClients {
+				if authID == clientID {
+					authorized = true
+					break
+				}
+			}
+		}
+		if !authorized {
+			slog.Warn("Unauthorized client connection attempt", "device_id", clientID.String())
+			tlsConn.Close()
+			return
+		}
+	}
+
+	if hasCert {
 		slog.Info("Connection established with client, forwarding", "id", clientID.String(), "target", forwardAddr)
 	} else {
 		slog.Info("Connection established with anonymous client, forwarding", "target", forwardAddr)

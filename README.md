@@ -61,6 +61,7 @@ Or simply:
 - `-relay <uri>`: Specific relay URI, or a dynamic pool URL (default: `dynamic+https://relays.syncthing.net/endpoint`).
 - `-discovery <urls>`: Comma-separated list of global announce directories.
 - `-direct-port <port>`: Enable direct TCP connection listening on this port (0 to disable, default: 0).
+- `-authorized-clients <ids>`: Comma-separated list of authorized client Syncthing Device IDs. When specified, only clients with matching Device IDs are allowed to connect; unauthorized clients are rejected post-handshake.
 - `-log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `-log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
@@ -251,4 +252,4 @@ syncthing-socket completion fish --help
 2. **E2E TLS 1.3:** Once the relay session is joined by both client and server, they negotiate a direct TLS 1.3 handshake.
 3. **Peer Verification:** 
    - The Client extracts the leaf certificate from the TLS handshake, hashes it to generate the server's Device ID, and compares it against the expected `<SERVER_DEVICE_ID>`. The connection is terminated immediately if they do not match.
-   - The Server requests the client's certificate to verify and log the client's Device ID.
+   - The Server requests the client's certificate to verify and log the client's Device ID. If `--authorized-clients` is specified, the server validates the client Device ID post-handshake and immediately closes unauthorized connections.

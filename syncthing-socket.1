@@ -62,6 +62,9 @@ Specify a custom Syncthing relay URI or dynamic pool URL. Defaults to the global
 .TP
 .BR \-\-discovery " \fIURL\fR"
 Comma-separated discovery announce URLs. Set to empty string ("") to disable discovery announcements.
+.TP
+.BR \-\-authorized\-clients " \fIDEVICE_IDS\fR"
+Comma-separated list of authorized client Syncthing Device IDs. When set, incoming connections from clients whose Device ID is not in this list are immediately closed post-TLS handshake.
 .SH CLIENT OPTIONS
 .TP
 .BR \-\-reverse\-forward " \fITARGET_ADDRESS\fR"
@@ -98,6 +101,9 @@ Features like \fB\-\-socks\fR and \fB\-\-shell\fR rely on the \fByamux\fR multip
 .TP
 .B Shell on Windows
 The Windows OS lacks native Pseudo-Terminal (PTY) support in the traditional Unix sense. When running the \fB\-\-shell\fR server on Windows, a "Fake PTY" wrapper is used. This wrapper manually translates Unix line endings (\\r to \\r\\n) and echoes input back to the client. Dynamic terminal resizing is not supported on Windows.
+.TP
+.B Client Authentication
+When \fB\-\-authorized\-clients\fR is specified on the server, client certificates are validated immediately after the TLS handshake. If a client fails to provide a certificate or its derived Device ID is not present in the authorized list, the server logs a warning (\fIUnauthorized client connection attempt\fR) and terminates the connection before initiating WebRTC ICE negotiation or application proxying.
 .SH EXAMPLES
 .PP
 .B 1. Raw Data Pipe
