@@ -9,9 +9,10 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/hashicorp/yamux v0.1.2
 	github.com/pion/webrtc/v4 v4.2.17
-	github.com/spf13/pflag v1.0.10
+	github.com/pires/go-proxyproto v0.15.0
+	github.com/spf13/cobra v1.10.2
 	github.com/syncthing/syncthing v1.30.0
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.55.0
 	golang.org/x/term v0.45.0
 )
 
@@ -57,15 +58,15 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.4 // indirect
 	github.com/soniakeys/quant v1.0.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/syncthing/notify v0.0.0-20250528144937-c7027d4f7465 // indirect
 	github.com/thejerf/suture/v4 v4.0.6 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/image v0.25.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 )

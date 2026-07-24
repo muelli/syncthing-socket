@@ -150,18 +150,25 @@ Client ID: F34H6S5-62G6AIP-2G3VHTB-I5D35S6-6T4K5E6-RFL52E4-37C5T3S-7FLHFAQ
 
 ---
 
-## Advanced: SSH Port Forwarding
+## Advanced: Port Forwarding and Reverse Proxies
 
 You can front your local SSH daemon (or any other TCP service) using `syncthing-socket`. This allows you to securely SSH into a machine behind a NAT.
 
 ### 1. On the Server (SSH Host)
-Start the server with the `-forward` option pointing to your SSH port (usually `127.0.0.1:22`). You should also specify `-cert` and `-key` so that your server keeps a persistent Device ID:
+Start the server with the `--forward` option pointing to your SSH port (usually `127.0.0.1:22`). You should also specify `--cert` and `--key` so that your server keeps a persistent Device ID:
 
 ```bash
 ./syncthing-socket server --cert cert.pem --key key.pem --forward 127.0.0.1:22
 ```
 
 The server will print its Device ID (e.g. `SERVER_DEVICE_ID`). It runs as a persistent daemon and forwards incoming connections to the local SSH port in separate goroutines, handling multiple concurrent sessions.
+
+### Support for PROXY Protocol V2
+If you are forwarding to a reverse proxy (like Nginx, Traefik, or HAProxy) rather than directly to an SSH daemon (which generally does not support it), you can enable the `--proxy-protocol` flag:
+```bash
+./syncthing-socket server --forward 127.0.0.1:80 --proxy-protocol
+```
+This injects an HAProxy PROXY Protocol V2 header at the start of the forwarded TCP stream, allowing compatible backend software to read the Client's original address. Furthermore, `syncthing-socket` embeds the client's cryptographically authenticated **Syncthing Device ID** into a custom TLV field (Type `0xEA`), enabling native peer authentication at the reverse proxy layer!
 
 ### 2. On the Client
 On the client machine, connect using standard SSH with the `-o ProxyCommand` flag:

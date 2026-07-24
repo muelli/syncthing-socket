@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/blacktop/go-termimg"
+	"github.com/pires/go-proxyproto"
 	syncthingprotocol "github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/relay/client"
 	"github.com/syncthing/syncthing/lib/tlsutil"
@@ -43,6 +44,7 @@ var (
 	serverSocks      bool
 	serverShell      bool
 	serverCommand    string
+	serverProxyProtocol bool
 	serverRelay      string
 	serverDiscovery  string
 	serverForward    string
@@ -135,7 +137,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			
-			if err := runServer(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand); err != nil {
+			if err := runServer(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol); err != nil {
 				slog.Error("Server error", "error", err)
 				os.Exit(1)
 			}
@@ -147,6 +149,7 @@ func main() {
 	serverCmd.Flags().BoolVar(&serverSocks, "socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
 	serverCmd.Flags().BoolVar(&serverShell, "shell", false, "Start an interactive PTY shell server")
 	serverCmd.Flags().StringVar(&serverCommand, "command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
+	serverCmd.Flags().BoolVar(&serverProxyProtocol, "proxy-protocol", false, "Prepend HAProxy PROXY Protocol V2 header to forwarded connections")
 	serverCmd.Flags().StringVar(&serverRelay, "relay", "dynamic+https://relays.syncthing.net/endpoint", "Relay URI or dynamic pool URL")
 	serverCmd.Flags().StringVar(&serverDiscovery, "discovery", "https://discovery-announce-v4.syncthing.net/v2/?nolookup,https://discovery-announce-v6.syncthing.net/v2/?nolookup", "Comma-separated discovery announce URLs")
 	serverCmd.Flags().StringVar(&serverForward, "forward", "", "Forward incoming connections to this host:port (e.g. 127.0.0.1:22)")
@@ -392,7 +395,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -500,7 +503,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						return
 					}
 					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
-					go handleForwardConn(conn, cert, forwardAddr, false)
+					go handleForwardConn(conn, cert, forwardAddr, false, proxyProtocol)
 				}
 			}()
 		}
@@ -519,7 +522,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						slog.Error("Failed to join session", "error", err)
 						continue
 					}
-					go handleForwardConn(conn, cert, forwardAddr, true)
+					go handleForwardConn(conn, cert, forwardAddr, true, proxyProtocol)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -815,7 +818,7 @@ func pipeBiDirectional(conn net.Conn) {
 	}
 }
 
-func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool) {
+func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool, proxyProtocol bool) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -863,6 +866,58 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 		return
 	}
 	defer localConn.Close()
+
+	if proxyProtocol {
+		var srcAddr, dstAddr net.Addr
+		if dataConn.RemoteAddr() != nil {
+			srcAddr = dataConn.RemoteAddr()
+		} else {
+			srcAddr = &net.TCPAddr{IP: net.ParseIP("0.0.0.0"), Port: 0}
+		}
+		if localConn.LocalAddr() != nil {
+			dstAddr = localConn.LocalAddr()
+		} else {
+			dstAddr = &net.TCPAddr{IP: net.ParseIP("0.0.0.0"), Port: 0}
+		}
+
+		transportProtocol := proxyproto.TCPv4
+		switch addr := srcAddr.(type) {
+		case *net.TCPAddr:
+			if addr.IP.To4() == nil {
+				transportProtocol = proxyproto.TCPv6
+			}
+		case *net.UDPAddr:
+			if addr.IP.To4() == nil {
+				transportProtocol = proxyproto.UDPv6
+			} else {
+				transportProtocol = proxyproto.UDPv4
+			}
+		}
+
+		header := &proxyproto.Header{
+			Version:           2,
+			Command:           proxyproto.PROXY,
+			TransportProtocol: transportProtocol,
+			SourceAddr:        srcAddr,
+			DestinationAddr:   dstAddr,
+		}
+
+		var peerID syncthingprotocol.DeviceID
+		if len(state.PeerCertificates) > 0 {
+			peerID = syncthingprotocol.NewDeviceID(state.PeerCertificates[0].Raw)
+			header.SetTLVs([]proxyproto.TLV{
+				{
+					Type:  0xEA,
+					Value: []byte(peerID.String()),
+				},
+			})
+		}
+
+		if _, err := header.WriteTo(localConn); err != nil {
+			slog.Error("Failed to write PROXY protocol header", "error", err)
+			return
+		}
+	}
 
 	errChan := make(chan error, 2)
 	go func() {

@@ -145,7 +145,18 @@ syncthing-socket server \-\-command "grep 'error' /var/log/syslog"
 syncthing-socket client <SERVER-ID>
 .RE
 .PP
-.B 5. Shell Completions
+.B 5. Reverse Proxy Forwarding (PROXY Protocol V2)
+.br
+Forward traffic to a reverse proxy like Nginx or Traefik and preserve client identity.
+.RS
+.B Server:
+.br
+syncthing-socket server \-\-forward 127.0.0.1:80 \-\-proxy-protocol
+.br
+.I (Ensure your backend proxy is configured to accept PROXY Protocol V2. The client's Device ID is injected as TLV 0xEA)
+.RE
+.PP
+.B 6. Shell Completions
 .br
 Generate auto-completion scripts for your shell.
 .RS
