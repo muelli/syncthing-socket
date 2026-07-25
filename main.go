@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/blacktop/go-termimg"
+	qrterminal "github.com/mdp/qrterminal/v3"
 	"github.com/pires/go-proxyproto"
+	"github.com/pquerna/otp/totp"
 	syncthingprotocol "github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/relay/client"
 	"github.com/syncthing/syncthing/lib/tlsutil"
@@ -53,6 +55,8 @@ var (
 	serverDirectPort int
 	serverLogLevel   string
 	serverLogFormat  string
+	serverTOTP       bool
+	serverTOTPSecret string
 
 	clientCert       string
 	clientKey        string
@@ -65,6 +69,7 @@ var (
 	clientTryDirect  bool
 	clientLogLevel   string
 	clientLogFormat  string
+	clientTOTP       string
 
 	idPassphrase string
 
@@ -159,10 +164,31 @@ func main() {
 				}
 			}
 
+			if serverTOTP && serverTOTPSecret == "" {
+				key, err := totp.Generate(totp.GenerateOpts{
+					Issuer:      "syncthing-socket",
+					AccountName: "server",
+				})
+				if err != nil {
+					slog.Error("Failed to generate TOTP secret", "error", err)
+					os.Exit(1)
+				}
+				serverTOTPSecret = key.Secret()
+			}
+			if serverTOTPSecret != "" {
+				otpURL := fmt.Sprintf("otpauth://totp/syncthing-socket:server?secret=%s&issuer=syncthing-socket", serverTOTPSecret)
+				fmt.Printf("\n==================================================\n")
+				fmt.Printf("TOTP Authentication Enabled! Secret: %s\n", serverTOTPSecret)
+				fmt.Printf("URL: %s\n\n", otpURL)
+				fmt.Printf("Scan this QR code with your Authenticator App:\n\n")
+				qrterminal.GenerateHalfBlock(otpURL, qrterminal.L, os.Stdout)
+				fmt.Printf("==================================================\n\n")
+			}
+
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			
-			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol, serverReverseForward, authorizedClients); err != nil {
+			if err := runServerWrapper(ctx, cert, serverRelay, discoveryServers, serverForward, serverDirectPort, serverSocks, serverShell, serverCommand, serverProxyProtocol, serverReverseForward, authorizedClients, serverTOTPSecret); err != nil {
 				slog.Error("Server error", "error", err)
 				os.Exit(1)
 			}
@@ -183,6 +209,8 @@ func main() {
 	serverCmd.Flags().StringVar(&serverAuthorizedClients, "authorized-clients", "", "Comma-separated list of authorized client Syncthing Device IDs")
 	serverCmd.Flags().StringVar(&serverLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	serverCmd.Flags().StringVar(&serverLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
+	serverCmd.Flags().BoolVar(&serverTOTP, "totp", false, "Enable Time-Based One-Time Password (TOTP) authentication (auto-generates secret if --totp-secret is not set)")
+	serverCmd.Flags().StringVar(&serverTOTPSecret, "totp-secret", "", "Shared base32 secret for TOTP authentication")
 
 	var clientCmd = &cobra.Command{
 		Use:   "client [target]",
@@ -259,7 +287,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward); err != nil {
+			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward, clientTOTP); err != nil {
 				slog.Error("Client error", "error", err)
 				os.Exit(1)
 			}
@@ -276,6 +304,7 @@ func main() {
 	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
 	clientCmd.Flags().StringVar(&clientLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientCmd.Flags().StringVar(&clientLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
+	clientCmd.Flags().StringVar(&clientTOTP, "totp", "", "6-digit TOTP passcode")
 
 	var idCmd = &cobra.Command{
 		Use:   "id",
@@ -440,7 +469,7 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
-func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string, authorizedClients []syncthingprotocol.DeviceID) error {
+func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string, authorizedClients []syncthingprotocol.DeviceID, totpSecret string) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
 		return fmt.Errorf("invalid relay URI: %w", err)
@@ -550,7 +579,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						return
 					}
 					slog.Info("Accepted direct TCP connection", "remote", conn.RemoteAddr().String())
-					go handleForwardConn(conn, cert, forwardAddr, false, proxyProtocol, authorizedClients)
+					go handleForwardConn(conn, cert, forwardAddr, false, proxyProtocol, authorizedClients, totpSecret)
 				}
 			}()
 		}
@@ -569,7 +598,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 						slog.Error("Failed to join session", "error", err)
 						continue
 					}
-					go handleForwardConn(conn, cert, forwardAddr, true, proxyProtocol, authorizedClients)
+					go handleForwardConn(conn, cert, forwardAddr, true, proxyProtocol, authorizedClients, totpSecret)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -631,7 +660,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		select {
 		case info := <-connChan:
-			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand, reverseForward, authorizedClients)
+			handleServerConn(info.conn, cert, info.isRelay, isSocks, isShell, isCommand, reverseForward, authorizedClients, totpSecret)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -639,7 +668,7 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 }
 
-func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string, reverseForward string, authorizedClients []syncthingprotocol.DeviceID) {
+func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks bool, isShell bool, isCommand string, reverseForward string, authorizedClients []syncthingprotocol.DeviceID, totpSecret string) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -675,6 +704,12 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 			tlsConn.Close()
 			return
 		}
+	}
+
+	if err := performServerAuth(tlsConn, totpSecret); err != nil {
+		slog.Warn("Authentication failed", "device_id", clientID.String(), "error", err)
+		tlsConn.Close()
+		return
 	}
 
 	if hasCert {
@@ -713,7 +748,7 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 	}
 }
 
-func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string) error {
+func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string, totpPasscode string) error {
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)
@@ -783,6 +818,12 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 				continue
 			}
 
+			if err := performClientAuth(tlsConn, totpPasscode); err != nil {
+				slog.Warn("Authentication failed on direct connection", "error", err)
+				tlsConn.Close()
+				continue
+			}
+
 			slog.Info("Connected directly (bypassing relay)", "address", addrStr)
 			handleClientConn(ctx, tlsConn, localSocks, isShell, reverseForward)
 			return nil
@@ -837,6 +878,11 @@ func runClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 	}
 
 	slog.Info("Connected successfully via relay", "peerID", peerID.String())
+
+	if err := performClientAuth(tlsConn, totpPasscode); err != nil {
+		tlsConn.Close()
+		return fmt.Errorf("authentication failed: %w", err)
+	}
 	
 	if !tryDirect {
 		slog.Info("Relay-only mode requested. Bypassing ICE.")
@@ -891,7 +937,7 @@ func pipeBiDirectional(conn net.Conn) {
 	}
 }
 
-func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool, proxyProtocol bool, authorizedClients []syncthingprotocol.DeviceID) {
+func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, isRelay bool, proxyProtocol bool, authorizedClients []syncthingprotocol.DeviceID, totpSecret string) {
 	defer conn.Close()
 
 	tlsConfig := &tls.Config{
@@ -927,6 +973,12 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 			tlsConn.Close()
 			return
 		}
+	}
+
+	if err := performServerAuth(tlsConn, totpSecret); err != nil {
+		slog.Warn("Authentication failed", "device_id", clientID.String(), "error", err)
+		tlsConn.Close()
+		return
 	}
 
 	if hasCert {

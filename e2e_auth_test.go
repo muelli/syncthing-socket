@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp/totp"
 	syncthingprotocol "github.com/syncthing/syncthing/lib/protocol"
 )
 
@@ -58,29 +57,25 @@ func buildTestAuthBinary(t *testing.T) {
 }
 
 // TestUnauthorizedClientDropped tests that an unauthorized client's connection
-// attempt is dropped post-handshake and an slog warning is logged on the server.
+// is closed by the server when --authorized-clients is enabled.
 func TestUnauthorizedClientDropped(t *testing.T) {
 	buildTestAuthBinary(t)
-
-	authClientPass := fmt.Sprintf("auth-client-pass-%d", time.Now().UnixNano())
-	unauthClientPass := fmt.Sprintf("unauth-client-pass-%d", time.Now().UnixNano())
-
-	authorizedDevID := getClientDeviceID(t, authClientPass)
-
-	safeServerErr := &SafeBuffer{}
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
 		"--passphrase", "server-auth-pass-1",
-		"--command", "echo 'unauthorized connection should not execute command' && sleep 0.5",
+		"--authorized-clients", "7SGFZYR-DXPRRF5-6QVKNME-XNUMTDU-XJ5KSHQ-HVCYWWU-XJDBIYB-TKWLDAJ", // Random dummy ID
+		"--command", "echo 'should not print'",
 		"--direct-port", "22010",
 		"--discovery", "",
 		"--relay", "",
-		"--authorized-clients", authorizedDevID,
 		"--log-level", "debug",
 		"--log-format", "text",
 	)
-	cmdServer.Stderr = io.MultiWriter(safeServerErr, os.Stderr)
+
+	serverOut := &SafeBuffer{}
+	cmdServer.Stdout = serverOut
+	cmdServer.Stderr = serverOut
 
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
@@ -92,12 +87,11 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 	}()
 
 	time.Sleep(1 * time.Second)
-
 	serverDevID := getServerDeviceID(t, "server-auth-pass-1")
 
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", unauthClientPass,
+		"--passphrase", "client-unauthorized-pass",
 		"--relay", "tcp://127.0.0.1:22010",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -105,52 +99,53 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 		serverDevID,
 	)
 
-	var clientOut bytes.Buffer
-	cmdClient.Stdout = &clientOut
-	cmdClient.Stderr = os.Stderr
+	clientOut := &SafeBuffer{}
+	cmdClient.Stdout = clientOut
+	cmdClient.Stderr = clientOut
 
-	_ = cmdClient.Run()
+	if err := cmdClient.Run(); err == nil {
+		t.Fatalf("Expected unauthorized client to fail, but it exited 0")
+	}
 
 	deadline := time.Now().Add(10 * time.Second)
-	warningFound := false
+	dropped := false
 	for time.Now().Before(deadline) {
-		logs := safeServerErr.String()
-		if strings.Contains(logs, "Unauthorized client connection attempt") {
-			warningFound = true
+		if strings.Contains(serverOut.String(), "Unauthorized client connection attempt") {
+			dropped = true
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if !warningFound {
-		t.Fatalf("Expected 'Unauthorized client connection attempt' log in server output. Got:\n%s", safeServerErr.String())
-	}
-
-	if strings.Contains(clientOut.String(), "unauthorized connection should not execute command") {
-		t.Fatalf("Unauthorized client received command output! Output: %s", clientOut.String())
+	if !dropped {
+		t.Fatalf("Server logs did not record dropping unauthorized client.\nLogs:\n%s", serverOut.String())
 	}
 
 	t.Log("Successfully verified unauthorized client connection was dropped and warning logged.")
 }
 
-// TestAuthorizedClientSucceeds tests that a client listed in --authorized-clients connects successfully.
+// TestAuthorizedClientSucceeds tests that a client whose ID is explicitly listed
+// in --authorized-clients can connect and execute a command.
 func TestAuthorizedClientSucceeds(t *testing.T) {
 	buildTestAuthBinary(t)
 
-	authClientPass := fmt.Sprintf("auth-client-pass-%d", time.Now().UnixNano())
-	authorizedDevID := getClientDeviceID(t, authClientPass)
+	clientPass := "client-authorized-pass-2"
+	clientDevID := getClientDeviceID(t, clientPass)
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
 		"--passphrase", "server-auth-pass-2",
+		"--authorized-clients", clientDevID,
 		"--command", "echo 'authorized client success' && sleep 0.5",
 		"--direct-port", "22011",
 		"--discovery", "",
 		"--relay", "",
-		"--authorized-clients", authorizedDevID,
 		"--log-level", "debug",
 		"--log-format", "text",
 	)
+
+	serverOut := &SafeBuffer{}
+	cmdServer.Stdout = serverOut
 	cmdServer.Stderr = os.Stderr
 
 	if err := cmdServer.Start(); err != nil {
@@ -163,12 +158,11 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 	}()
 
 	time.Sleep(1 * time.Second)
-
 	serverDevID := getServerDeviceID(t, "server-auth-pass-2")
 
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", authClientPass,
+		"--passphrase", clientPass,
 		"--relay", "tcp://127.0.0.1:22011",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -208,11 +202,12 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 	t.Log("Successfully verified authorized client connection succeeded.")
 }
 
-// TestClientWithoutAuthorizedClientsFlagSucceeds tests that when --authorized-clients is omitted, connections succeed by default.
+// TestClientWithoutAuthorizedClientsFlagSucceeds ensures backward compatibility:
+// omitting --authorized-clients allows any client to connect.
 func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 	buildTestAuthBinary(t)
 
-	clientPass := fmt.Sprintf("default-client-pass-%d", time.Now().UnixNano())
+	clientPass := "client-any-pass-3"
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
@@ -224,6 +219,9 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 		"--log-level", "debug",
 		"--log-format", "text",
 	)
+
+	serverOut := &SafeBuffer{}
+	cmdServer.Stdout = serverOut
 	cmdServer.Stderr = os.Stderr
 
 	if err := cmdServer.Start(); err != nil {
@@ -236,7 +234,6 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 	}()
 
 	time.Sleep(1 * time.Second)
-
 	serverDevID := getServerDeviceID(t, "server-auth-pass-3")
 
 	cmdClient := exec.Command(
@@ -279,4 +276,135 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 	}
 
 	t.Log("Successfully verified default client connection without auth flag succeeded.")
+}
+
+// TestTOTPAuthenticationFailure tests that a client presenting an invalid TOTP passcode is rejected.
+func TestTOTPAuthenticationFailure(t *testing.T) {
+	buildTestAuthBinary(t)
+
+	secret := "JBSWY3DPEHPK3PXP"
+	cmdServer := exec.Command(
+		"./test-auth-binary", "server",
+		"--passphrase", "server-totp-fail",
+		"--totp-secret", secret,
+		"--command", "echo 'should not execute'",
+		"--direct-port", "22015",
+		"--discovery", "",
+		"--relay", "",
+		"--log-level", "debug",
+		"--log-format", "text",
+	)
+
+	serverOut := &SafeBuffer{}
+	cmdServer.Stdout = serverOut
+	cmdServer.Stderr = os.Stderr
+
+	if err := cmdServer.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer func() {
+		if cmdServer.Process != nil {
+			cmdServer.Process.Kill()
+		}
+	}()
+
+	time.Sleep(1 * time.Second)
+	serverDevID := getServerDeviceID(t, "server-totp-fail")
+
+	cmdClientFail := exec.Command(
+		"./test-auth-binary", "client",
+		"--passphrase", "client-totp-fail",
+		"--totp", "000000",
+		"--relay", "tcp://127.0.0.1:22015",
+		"--discovery", "",
+		"--log-level", "debug",
+		"--log-format", "text",
+		serverDevID,
+	)
+	if err := cmdClientFail.Run(); err == nil {
+		t.Fatalf("Expected client with invalid TOTP to fail, but it exited 0")
+	}
+
+	t.Log("Successfully verified invalid TOTP passcode is rejected.")
+}
+
+// TestTOTPAuthenticationSuccess tests that a client presenting a valid TOTP passcode succeeds.
+func TestTOTPAuthenticationSuccess(t *testing.T) {
+	buildTestAuthBinary(t)
+
+	secret := "JBSWY3DPEHPK3PXP"
+	cmdServer := exec.Command(
+		"./test-auth-binary", "server",
+		"--passphrase", "server-totp-success",
+		"--totp-secret", secret,
+		"--command", "echo 'totp success' && sleep 0.5",
+		"--direct-port", "22016",
+		"--discovery", "",
+		"--relay", "",
+		"--log-level", "debug",
+		"--log-format", "text",
+	)
+
+	serverOut := &SafeBuffer{}
+	cmdServer.Stdout = serverOut
+	cmdServer.Stderr = os.Stderr
+
+	if err := cmdServer.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer func() {
+		if cmdServer.Process != nil {
+			cmdServer.Process.Kill()
+		}
+	}()
+
+	time.Sleep(1 * time.Second)
+	serverDevID := getServerDeviceID(t, "server-totp-success")
+
+	code, err := totp.GenerateCode(secret, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("Failed to generate TOTP code: %v", err)
+	}
+
+	cmdClientSuccess := exec.Command(
+		"./test-auth-binary", "client",
+		"--passphrase", "client-totp-success",
+		"--totp", code,
+		"--relay", "tcp://127.0.0.1:22016",
+		"--discovery", "",
+		"--log-level", "debug",
+		"--log-format", "text",
+		serverDevID,
+	)
+
+	clientOut := &SafeBuffer{}
+	cmdClientSuccess.Stdout = clientOut
+	cmdClientSuccess.Stderr = os.Stderr
+	stdin, _ := cmdClientSuccess.StdinPipe()
+	defer stdin.Close()
+
+	if err := cmdClientSuccess.Start(); err != nil {
+		t.Fatalf("Failed to start success client: %v", err)
+	}
+	defer func() {
+		if cmdClientSuccess.Process != nil {
+			cmdClientSuccess.Process.Kill()
+		}
+	}()
+
+	deadline := time.Now().Add(30 * time.Second)
+	success := false
+	for time.Now().Before(deadline) {
+		if strings.Contains(clientOut.String(), "totp success") {
+			success = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if !success {
+		t.Fatalf("Timed out waiting for TOTP client output. Got:\n%s", clientOut.String())
+	}
+
+	t.Log("Successfully verified valid TOTP passcode authenticates cleanly.")
 }
