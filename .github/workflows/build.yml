@@ -47,6 +47,11 @@ jobs:
           # Build for Windows (AMD64)
           GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/syncthing-socket-windows-amd64.exe .
 
+          # Create official source tarball containing the VERSION file for OS packagers
+          echo "$VERSION" > VERSION
+          tar --exclude='./dist' --exclude='./.git' --exclude='./local' -czf dist/syncthing-socket-source-$VERSION.tar.gz .
+          rm VERSION
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
