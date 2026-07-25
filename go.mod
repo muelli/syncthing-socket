@@ -9,8 +9,10 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/hashicorp/yamux v0.1.2
 	github.com/kardianos/service v1.3.0
+	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/pion/webrtc/v4 v4.2.17
 	github.com/pires/go-proxyproto v0.15.0
+	github.com/pquerna/otp v1.5.0
 	github.com/spf13/cobra v1.10.2
 	github.com/syncthing/syncthing v1.30.0
 	golang.org/x/net v0.55.0
@@ -19,6 +21,7 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/calmh/xdr v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/x/ansi v0.9.3 // indirect
@@ -70,4 +73,5 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )

@@ -8,6 +8,11 @@ github.com/beorn7/perks/quantile
 ## explicit; go 1.24
 github.com/blacktop/go-termimg
 github.com/blacktop/go-termimg/pkg/csi
+# github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc
+## explicit
+github.com/boombuler/barcode
+github.com/boombuler/barcode/qr
+github.com/boombuler/barcode/utils
 # github.com/calmh/xdr v1.2.0
 ## explicit; go 1.20
 github.com/calmh/xdr
@@ -67,6 +72,9 @@ github.com/mattn/go-runewidth
 # github.com/mattn/go-sixel v0.0.5
 ## explicit; go 1.16
 github.com/mattn/go-sixel
+# github.com/mdp/qrterminal/v3 v3.2.1
+## explicit; go 1.20
+github.com/mdp/qrterminal/v3
 # github.com/miscreant/miscreant.go v0.0.0-20200214223636-26d376326b75
 ## explicit; go 1.12
 github.com/miscreant/miscreant.go
@@ -199,6 +207,12 @@ github.com/pires/go-proxyproto
 # github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55
 ## explicit; go 1.14
 github.com/power-devops/perfstat
+# github.com/pquerna/otp v1.5.0
+## explicit; go 1.12
+github.com/pquerna/otp
+github.com/pquerna/otp/hotp
+github.com/pquerna/otp/internal
+github.com/pquerna/otp/totp
 # github.com/prometheus/client_golang v1.22.0
 ## explicit; go 1.22
 github.com/prometheus/client_golang/prometheus
@@ -343,3 +357,8 @@ google.golang.org/protobuf/reflect/protoregistry
 google.golang.org/protobuf/runtime/protoiface
 google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/known/timestamppb
+# rsc.io/qr v0.2.0
+## explicit
+rsc.io/qr
+rsc.io/qr/coding
+rsc.io/qr/gf256
