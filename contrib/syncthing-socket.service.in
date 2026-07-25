@@ -1,0 +1,13 @@
+[Unit]
+Description=Syncthing Socket
+After=network.target
+
+[Service]
+Type=simple
+# ExecStart is dynamically substituted during 'just install' based on PREFIX
+ExecStart=@PREFIX@/bin/syncthing-socket server --log-format journald
+Restart=on-failure
+User=syncthing-socket
+
+[Install]
+WantedBy=multi-user.target
