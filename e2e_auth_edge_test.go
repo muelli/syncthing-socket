@@ -153,6 +153,7 @@ func TestInvalidDeviceIDFormatOnStartup(t *testing.T) {
 		"--passphrase", "server-invalid-pass",
 		"--direct-port", "22015",
 		"--authorized-clients", "INVALID-DEVICE-ID-FORMAT",
+		"--log-format", "text",
 	)
 	var errBuf bytes.Buffer
 	cmdServer.Stderr = &errBuf
