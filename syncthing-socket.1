@@ -65,6 +65,12 @@ Comma-separated discovery announce URLs. Set to empty string ("") to disable dis
 .TP
 .BR \-\-authorized\-clients " \fIDEVICE_IDS\fR"
 Comma-separated list of authorized client Syncthing Device IDs. When set, incoming connections from clients whose Device ID is not in this list are immediately closed post-TLS handshake.
+.TP
+.B \-\-totp
+Require Time-based One-Time Password (TOTP, RFC 6238) authentication for incoming connections. If \-\-totp\-secret is omitted, a secure base32 secret is automatically generated and an ASCII QR code is printed to stderr.
+.TP
+.BR \-\-totp\-secret " \fISECRET\fR"
+Base32-encoded TOTP secret key for authentication. Explicitly setting this flag automatically enables TOTP requirement.
 .SH CLIENT OPTIONS
 .TP
 .BR \-\-reverse\-forward " \fITARGET_ADDRESS\fR"
@@ -84,6 +90,9 @@ Discovery lookup URL. Defaults to the global Syncthing endpoint.
 .TP
 .B \-\-direct
 Try direct TCP connections to the server's known IPs before falling back to a relay connection. (default true)
+.TP
+.BR \-\-totp " \fICODE\fR"
+6-digit TOTP passcode for server authentication. If omitted when connecting to a TOTP-enabled server, the client will interactively prompt for the code on standard input.
 .SH GENERAL OPTIONS
 .TP
 .BR \-\-log\-level " \fILEVEL\fR"

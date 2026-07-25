@@ -62,6 +62,8 @@ Or simply:
 - `--discovery <urls>`: Comma-separated list of global announce directories.
 - `--direct-port <port>`: Enable direct TCP connection listening on this port (0 to disable, default: 0).
 - `--authorized-clients <ids>`: Comma-separated list of authorized client Syncthing Device IDs. When specified, only clients with matching Device IDs are allowed to connect; unauthorized clients are rejected post-handshake.
+- `--totp`: Require Time-based One-Time Password (TOTP, RFC 6238) authentication for incoming connections. If `--totp-secret` is omitted, a secure base32 secret is automatically generated and an ASCII QR code is printed to stderr.
+- `--totp-secret <secret>`: Base32-encoded TOTP secret key for authentication. Explicitly setting this flag automatically enables TOTP requirement.
 - `--log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `--log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
@@ -99,6 +101,7 @@ Specify the relay address manually via the `--relay` flag:
 - `--cert <path>` / `--key <path>`: Use a persistent certificate (default: generates a secure in-memory certificate).
 - `--discovery <url>`: Custom discovery server URL for lookups (default: `https://discovery-lookup.syncthing.net/v2/`).
 - `--direct`: Attempt direct P2P connections via WebRTC ICE (UDP NAT Hole Punching) and direct TCP before seamlessly falling back to relay. Set `--direct=false` to disable ICE and force relay connections (default: true).
+- `--totp <code>`: 6-digit TOTP passcode for server authentication. If omitted when connecting to a TOTP-enabled server, the client will interactively prompt for the code on standard input.
 - `--log-level <level>`: Logging level: trace, debug, info, warn, error (default: info).
 - `--log-format <format>`: Logging format: auto, text, json, journald (default: auto).
 
@@ -250,6 +253,7 @@ syncthing-socket completion fish --help
 
 1. **Relay Blindness:** The relay server acts purely as a TCP proxy. It cannot decrypt or read any data sent through it.
 2. **E2E TLS 1.3:** Once the relay session is joined by both client and server, they negotiate a direct TLS 1.3 handshake.
-3. **Peer Verification:** 
+3. **Peer Verification & Authentication:** 
    - The Client extracts the leaf certificate from the TLS handshake, hashes it to generate the server's Device ID, and compares it against the expected `<SERVER_DEVICE_ID>`. The connection is terminated immediately if they do not match.
    - The Server requests the client's certificate to verify and log the client's Device ID. If `--authorized-clients` is specified, the server validates the client Device ID post-handshake and immediately closes unauthorized connections.
+   - If `--totp` is enabled on the server, an orthogonal challenge-response protocol requires the client to supply a valid Time-based One-Time Password (RFC 6238) before any application stream or tunnel is opened.
