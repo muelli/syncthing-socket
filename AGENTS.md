@@ -32,6 +32,9 @@ Welcome to the `syncthing-socket` project! This file serves as a brain-dump and 
 - We use a `Justfile` instead of Make. 
 - **Go Binary**: The `Justfile` is configured to look for a vendored Go binary at `./local/go/bin/go` first, falling back to the system `go`.
 
+### Pre-Commit & Pre-Push Verification (MANDATORY)
+- **Always Run Tests**: Whenever files are modified, touched, or restored (including via `git checkout` or `git restore`), you **MUST** run the project test suite (`just test` or `go test ./...`) and verify it exits cleanly **before** running `git commit` or `git push`. Never commit or push without running the tests on the final working tree state.
+
 ### Cross-Platform Compliance
 - The code strictly supports compilation for Linux, macOS, and Windows.
 - Always use `//go:build windows` and `//go:build !windows` tags for OS-specific features (e.g., PTY handling).
