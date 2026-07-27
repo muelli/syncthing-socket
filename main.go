@@ -1002,7 +1002,8 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 		dataConn = tlsConn
 	}
 
-	localConn, err := net.Dial("tcp", forwardAddr)
+	network, addr := parseNetworkAndAddr(forwardAddr)
+	localConn, err := net.Dial(network, addr)
 	if err != nil {
 		slog.Error("Failed to connect to forward target", "target", forwardAddr, "error", err)
 		if dataConn != tlsConn {
@@ -1028,16 +1029,30 @@ func handleForwardConn(conn net.Conn, cert tls.Certificate, forwardAddr string, 
 		}
 
 		transportProtocol := proxyproto.TCPv4
-		switch addr := srcAddr.(type) {
-		case *net.TCPAddr:
-			if addr.IP.To4() == nil {
-				transportProtocol = proxyproto.TCPv6
+		if _, isUnixSrc := srcAddr.(*net.UnixAddr); isUnixSrc {
+			transportProtocol = proxyproto.UnixStream
+		} else if _, isUnixDst := dstAddr.(*net.UnixAddr); isUnixDst {
+			transportProtocol = proxyproto.UnixStream
+		}
+		if transportProtocol == proxyproto.UnixStream {
+			if _, ok := srcAddr.(*net.UnixAddr); !ok {
+				srcAddr = &net.UnixAddr{Name: srcAddr.String(), Net: "unix"}
 			}
-		case *net.UDPAddr:
-			if addr.IP.To4() == nil {
-				transportProtocol = proxyproto.UDPv6
-			} else {
-				transportProtocol = proxyproto.UDPv4
+			if _, ok := dstAddr.(*net.UnixAddr); !ok {
+				dstAddr = &net.UnixAddr{Name: dstAddr.String(), Net: "unix"}
+			}
+		} else {
+			switch addr := srcAddr.(type) {
+			case *net.TCPAddr:
+				if addr.IP.To4() == nil {
+					transportProtocol = proxyproto.TCPv6
+				}
+			case *net.UDPAddr:
+				if addr.IP.To4() == nil {
+					transportProtocol = proxyproto.UDPv6
+				} else {
+					transportProtocol = proxyproto.UDPv4
+				}
 			}
 		}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"os"
 
 	"github.com/hashicorp/yamux"
 )
@@ -17,7 +18,12 @@ func runReverseForwardServer(conn net.Conn, bindAddr string) {
 	}
 	defer session.Close()
 
-	listener, err := net.Listen("tcp", bindAddr)
+	network, addr := parseNetworkAndAddr(bindAddr)
+	if network == "unix" {
+		_ = os.Remove(addr)
+		defer os.Remove(addr)
+	}
+	listener, err := net.Listen(network, addr)
 	if err != nil {
 		slog.Error("Failed to start reverse forward listener", "bindAddr", bindAddr, "error", err)
 		return
@@ -83,7 +89,8 @@ func runReverseForwardClient(ctx context.Context, conn net.Conn, targetAddr stri
 		go func(stream net.Conn) {
 			defer stream.Close()
 
-			targetConn, err := net.Dial("tcp", targetAddr)
+			network, addr := parseNetworkAndAddr(targetAddr)
+			targetConn, err := net.Dial(network, addr)
 			if err != nil {
 				slog.Error("Failed to dial reverse forward target", "targetAddr", targetAddr, "error", err)
 				return
