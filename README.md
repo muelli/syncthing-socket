@@ -167,12 +167,12 @@ Start the server with the `--forward` option pointing to your SSH port (usually 
 
 The server will print its Device ID (e.g. `SERVER_DEVICE_ID`). It runs as a persistent daemon and forwards incoming connections to the local SSH port in separate goroutines, handling multiple concurrent sessions.
 
-### Support for PROXY Protocol V2
-If you are forwarding to a reverse proxy (like Nginx, Traefik, or HAProxy) rather than directly to an SSH daemon (which generally does not support it), you can enable the `--proxy-protocol` flag:
+### Support for PROXY Protocol V2 and UNIX Domain Sockets
+You can forward traffic to TCP addresses or local UNIX domain sockets (e.g. `/var/run/docker.sock` or `unix:///tmp/app.sock`). If you are forwarding to a reverse proxy (like Nginx, Traefik, or HAProxy), you can enable the `--proxy-protocol` flag:
 ```bash
-./syncthing-socket server --forward 127.0.0.1:80 --proxy-protocol
+./syncthing-socket server --forward /var/run/docker.sock --proxy-protocol
 ```
-This injects an HAProxy PROXY Protocol V2 header at the start of the forwarded TCP stream, allowing compatible backend software to read the Client's original address. Furthermore, `syncthing-socket` embeds the client's cryptographically authenticated **Syncthing Device ID** into a custom TLV field (Type `0xEA`), enabling native peer authentication at the reverse proxy layer!
+This injects an HAProxy PROXY Protocol V2 header at the start of the forwarded stream, allowing compatible backend software to read the Client's original address. Furthermore, `syncthing-socket` embeds the client's cryptographically authenticated **Syncthing Device ID** into a custom TLV field (Type `0xEA`), enabling native peer authentication at the reverse proxy layer!
 
 ### 2. On the Client
 On the client machine, connect using standard SSH with the `-o ProxyCommand` flag:
@@ -198,19 +198,23 @@ ssh my-nat-server
 
 ## Advanced: Reverse Port Forwarding
 
-You can expose a local service (e.g., a development web server) to the internet by routing traffic backward through a `syncthing-socket` server running on a public VPS. This acts exactly like SSH `-R`.
+You can expose a local service (e.g., a development web server) to the internet by routing traffic backward through a `syncthing-socket` server running on a public VPS. This acts exactly like SSH `-R`. You can use TCP addresses or UNIX domain sockets on either side!
 
 **1. On the Server (Public VPS):**
 ```bash
+# Listen on TCP port 8080 or a UNIX socket
 ./syncthing-socket server --passphrase my-secret --reverse-forward 0.0.0.0:8080
+# Or: ./syncthing-socket server --passphrase my-secret --reverse-forward /tmp/remote.sock
 ```
 
 **2. On the Client (Local Machine):**
 ```bash
+# Forward incoming reverse tunnel traffic to local port 8000 or a UNIX socket
 ./syncthing-socket client --passphrase my-secret --reverse-forward 127.0.0.1:8000
+# Or: ./syncthing-socket client --passphrase my-secret --reverse-forward /var/run/docker.sock
 ```
 
-Now, anyone accessing `http://<VPS-IP>:8080` will securely hit your local service on port 8000. Under the hood, this uses `yamux` multiplexing over the P2P tunnel to handle multiple concurrent HTTP requests seamlessly!
+Now, anyone accessing `http://<VPS-IP>:8080` (or connecting to the remote UNIX socket) will securely hit your local service. Under the hood, this uses `yamux` multiplexing over the P2P tunnel to handle multiple concurrent requests seamlessly!
 
 ---
 

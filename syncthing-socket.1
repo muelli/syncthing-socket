@@ -48,11 +48,11 @@ Start an interactive PTY shell server. The client must also specify \-\-shell to
 .BR \-\-command " \fICOMMAND\fR"
 Execute a specific shell command for each incoming connection and pipe its stdin/stdout over the tunnel.
 .TP
-.BR \-\-forward " \fIHOST:PORT\fR"
-Forward incoming connections to this host:port (e.g. 127.0.0.1:22).
+.BR \-\-forward " \fIADDRESS\fR"
+Forward incoming connections to this TCP host:port or UNIX domain socket (e.g. 127.0.0.1:22 or /var/run/docker.sock).
 .TP
 .BR \-\-reverse\-forward " \fIBIND_ADDRESS\fR"
-Bind a local port and reverse-forward incoming connections to the client (e.g. 0.0.0.0:8080).
+Bind a local TCP port or UNIX socket and reverse-forward incoming connections to the client (e.g. 0.0.0.0:8080 or /tmp/remote.sock).
 .TP
 .BR \-\-direct\-port " \fIPORT\fR"
 Enable a direct TCP listener on the specified port. Used for bypassing relays completely in local environments (0 to disable).
@@ -74,7 +74,7 @@ Base32-encoded TOTP secret key for authentication. Explicitly setting this flag 
 .SH CLIENT OPTIONS
 .TP
 .BR \-\-reverse\-forward " \fITARGET_ADDRESS\fR"
-Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80).
+Accept reverse-forwarded connections from the server and dial this TCP target or UNIX socket (e.g. 127.0.0.1:80 or /var/run/docker.sock).
 .TP
 .BR \-\-socks " \fIADDRESS\fR"
 Start a local SOCKS5 proxy on the given address (e.g. 127.0.0.1:1080) and tunnel traffic to the server.
@@ -195,15 +195,19 @@ syncthing-socket completion [bash|zsh|fish|powershell] \-\-help
 .PP
 .B 7. Reverse Port Forwarding
 .br
-Expose a local service behind a NAT to the internet by routing traffic backward through a server.
+Expose a local service behind a NAT to the internet by routing traffic backward through a server. Supports TCP or UNIX sockets.
 .RS
 .B Server (Public VPS):
 .br
 syncthing-socket server \-\-passphrase my-secret \-\-reverse-forward 0.0.0.0:8080
 .br
+.I (Or listen on a UNIX socket: \-\-reverse-forward /tmp/remote.sock)
+.br
 .B Client (Local Machine):
 .br
 syncthing-socket client \-\-passphrase my-secret \-\-reverse-forward 127.0.0.1:8000
+.br
+.I (Or forward to a UNIX socket: \-\-reverse-forward /var/run/docker.sock)
 .RE
 .SH AUTHORS
 Written by the syncthing-socket contributors.
