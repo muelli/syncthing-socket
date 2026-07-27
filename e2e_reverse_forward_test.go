@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -96,4 +97,88 @@ func TestReverseForwardP2P(t *testing.T) {
 	}
 
 	t.Log("Successfully accessed client-side HTTP server via reverse P2P tunnel!")
+}
+
+func TestReverseForwardUnixSocket(t *testing.T) {
+	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", ".")
+	if err := cmdBuild.Run(); err != nil {
+		t.Fatalf("Failed to build binary: %v", err)
+	}
+
+	passphrase := fmt.Sprintf("test-revfwd-unix-passphrase-%d", time.Now().UnixNano())
+
+	clientSocketPath := fmt.Sprintf("/tmp/test_revfwd_client_%d.sock", time.Now().UnixNano())
+	_ = os.Remove(clientSocketPath)
+	defer os.Remove(clientSocketPath)
+
+	mockTargetListener, err := net.Listen("unix", clientSocketPath)
+	if err != nil {
+		t.Fatalf("Failed to bind mock target listener: %v", err)
+	}
+	defer mockTargetListener.Close()
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Hello from unix reverse forward!"))
+		})
+		http.Serve(mockTargetListener, mux)
+	}()
+
+	serverSocketPath := fmt.Sprintf("/tmp/test_revfwd_server_%d.sock", time.Now().UnixNano())
+	_ = os.Remove(serverSocketPath)
+	defer os.Remove(serverSocketPath)
+
+	cmdServer := exec.Command("./test-revfwd-binary", "server", "--passphrase", passphrase, "--reverse-forward", "unix://"+serverSocketPath, "--direct-port", "22007", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer.Stdout = os.Stdout
+	cmdServer.Stderr = os.Stderr
+	if err := cmdServer.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer cmdServer.Process.Kill()
+
+	time.Sleep(1 * time.Second)
+
+	cmdClient := exec.Command("./test-revfwd-binary", "client", "--passphrase", passphrase, "--reverse-forward", "unix://"+clientSocketPath, "--relay", "tcp://127.0.0.1:22007", "--discovery", "", "--log-level", "debug", "--log-format", "text")
+	cmdClient.Stdout = os.Stdout
+	cmdClient.Stderr = os.Stderr
+
+	if err := cmdClient.Start(); err != nil {
+		t.Fatalf("Failed to start client: %v", err)
+	}
+	defer cmdClient.Process.Kill()
+
+	time.Sleep(3 * time.Second)
+
+	httpClient := &http.Client{
+		Timeout: 3 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return net.Dial("unix", serverSocketPath)
+			},
+		},
+	}
+
+	resp, err := httpClient.Get("http://unix-server/")
+	if err != nil {
+		t.Fatalf("Failed to perform HTTP request against reverse forward listener: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected HTTP 200, got %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read response body: %v", err)
+	}
+
+	expected := "Hello from unix reverse forward!"
+	if !strings.Contains(string(body), expected) {
+		t.Fatalf("Expected response to contain %q, got %q", expected, string(body))
+	}
+
+	t.Log("Successfully accessed client-side HTTP server via reverse P2P tunnel over UNIX sockets!")
 }

@@ -112,3 +112,102 @@ func TestForwardProxyProtocolV2(t *testing.T) {
 		t.Fatalf("Test timed out waiting for expected output. Got: %s", outputBuffer.String())
 	}
 }
+
+func TestForwardUnixSocket(t *testing.T) {
+	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", ".")
+	if err := cmdBuild.Run(); err != nil {
+		t.Fatalf("Failed to build binary: %v", err)
+	}
+
+	socketPath := fmt.Sprintf("/tmp/test_fwd_%d.sock", time.Now().UnixNano())
+	_ = os.Remove(socketPath)
+	defer os.Remove(socketPath)
+
+	backendLn, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Failed to listen on unix socket: %v", err)
+	}
+	defer backendLn.Close()
+
+	go func() {
+		conn, err := backendLn.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		reader := bufio.NewReader(conn)
+		header, err := proxyproto.Read(reader)
+		if err != nil {
+			conn.Write([]byte(fmt.Sprintf("ERROR: %v\n", err)))
+			return
+		}
+
+		var deviceID string
+		if tlvs, err := header.TLVs(); err == nil {
+			for _, tlv := range tlvs {
+				if tlv.Type == 0xEA {
+					deviceID = string(tlv.Value)
+				}
+			}
+		}
+
+		protoStr := fmt.Sprintf("%v", header.TransportProtocol)
+		if header.TransportProtocol == proxyproto.UnixStream {
+			protoStr = "UnixStream"
+		}
+		conn.Write([]byte(fmt.Sprintf("PROXY_PROTO:%s DEVICE_ID:%s\n", protoStr, deviceID)))
+		io.Copy(conn, reader)
+	}()
+
+	passphrase := fmt.Sprintf("test-forward-unix-passphrase-%d", time.Now().UnixNano())
+	directPort := "22006"
+
+	cmdServer := exec.Command("./test-forward-binary", "server", "--passphrase", passphrase, "--forward", "unix://"+socketPath, "--proxy-protocol", "--direct-port", directPort, "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer.Stdout = os.Stdout
+	cmdServer.Stderr = os.Stderr
+	if err := cmdServer.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer cmdServer.Process.Kill()
+
+	time.Sleep(1 * time.Second)
+
+	cmdClient := exec.Command("./test-forward-binary", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:"+directPort, "--discovery", "", "--log-level", "debug", "--log-format", "text")
+
+	stdinRead, stdinWrite := io.Pipe()
+	cmdClient.Stdin = stdinRead
+
+	go func() {
+		time.Sleep(1 * time.Second)
+		stdinWrite.Write([]byte("hello unix backend\n"))
+	}()
+
+	stdout, _ := cmdClient.StdoutPipe()
+	var outputBuffer bytes.Buffer
+	go io.Copy(&outputBuffer, stdout)
+	cmdClient.Stderr = os.Stderr
+
+	if err := cmdClient.Start(); err != nil {
+		t.Fatalf("Failed to start client: %v", err)
+	}
+	defer cmdClient.Process.Kill()
+
+	deadline := time.Now().Add(10 * time.Second)
+	success := false
+	for time.Now().Before(deadline) {
+		output := outputBuffer.String()
+		if strings.Contains(output, "PROXY_PROTO:UnixStream") && strings.Contains(output, "DEVICE_ID:") && strings.Contains(output, "hello unix backend") {
+			if !strings.Contains(output, "DEVICE_ID:\n") {
+				success = true
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if !success {
+		t.Fatalf("Test timed out waiting for expected output. Got: %s", outputBuffer.String())
+	}
+}
+
