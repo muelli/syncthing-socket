@@ -27,7 +27,9 @@ jobs:
           cache: true
 
       - name: Run Tests
-        run: go test -v ./...
+        run: |
+          go test -v ./...
+          rm -f test-*
 
       - name: Build Binaries
         run: |
@@ -49,7 +51,7 @@ jobs:
 
           # Create official source tarball containing the VERSION file for OS packagers
           echo "$VERSION" > VERSION
-          tar --exclude='./dist' --exclude='./.git' --exclude='./local' -czf dist/syncthing-socket-source-$VERSION.tar.gz .
+          tar --exclude='./dist' --exclude='./.git' --exclude='./local' --exclude='./test-*' --exclude='./.venv' --exclude='./.agents' -czf dist/syncthing-socket-source-$VERSION.tar.gz .
           rm VERSION
 
       - name: Upload Artifacts
