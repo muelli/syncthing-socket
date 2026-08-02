@@ -1,0 +1,26 @@
+#!/bin/bash
+DEVICE=$1
+P2P_KEY_SEED=$2
+KEY_BEARING_DEVICE_ID=$3
+
+if [ -z "$KEY_BEARING_DEVICE_ID" ]; then
+    echo "Usage: syncthing-luks-bind <device> <p2p_key_seed> <key_bearing_device_id>"
+    exit 1
+fi
+
+# Create a secure temporary file
+TMPJSON=$(mktemp)
+
+cat <<EOF > "$TMPJSON"
+{
+  "type":"syncthing-socket",
+  "keyslots":["0"],
+  "p2p_key_seed":"$P2P_KEY_SEED",
+  "key_bearing_device_id":"$KEY_BEARING_DEVICE_ID"
+}
+EOF
+
+echo "Injecting syncthing-socket metadata into $DEVICE..."
+cryptsetup token add --json "$TMPJSON" "$DEVICE"
+rm -f "$TMPJSON"
+echo "Success!"

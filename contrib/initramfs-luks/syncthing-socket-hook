@@ -1,0 +1,15 @@
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in prereqs) prereqs; exit 0 ;; esac
+. /usr/share/initramfs-tools/hook-functions
+
+# Edit this to point to where you installed syncthing-socket on the server
+SYNCTHING_SOCKET_BIN="/usr/local/bin/syncthing-socket"
+
+# Copy binary
+copy_exec "$SYNCTHING_SOCKET_BIN" /bin/
+
+# Copy CA certificates for HTTPS discovery
+mkdir -p $DESTDIR/etc/ssl/certs
+cp -a /etc/ssl/certs/ca-certificates.crt $DESTDIR/etc/ssl/certs/

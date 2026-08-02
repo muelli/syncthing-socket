@@ -1,0 +1,69 @@
+#!/bin/sh
+# INSTALLATION: Copy this script to /lib/cryptsetup/scripts/syncthing-socket-keyscript
+# and make it executable.
+
+# Option 1: Hardcoded Configuration
+P2P_KEY_SEED=""
+KEY_BEARING_DEVICE_ID=""
+
+# Option 2: Dynamic LUKS2 Token Configuration
+# Extract the configuration from the LUKS2 header token if available
+if [ -n "$CRYPTTAB_SOURCE" ]; then
+    TOKEN_JSON=$(cryptsetup token dump "$CRYPTTAB_SOURCE" 2>/dev/null | grep '"type":"syncthing-socket"')
+    if [ -n "$TOKEN_JSON" ]; then
+        P2P_KEY_SEED=$(echo "$TOKEN_JSON" | sed -n 's/.*"p2p_key_seed":"\([^"]*\)".*/\1/p')
+        KEY_BEARING_DEVICE_ID=$(echo "$TOKEN_JSON" | sed -n 's/.*"key_bearing_device_id":"\([^"]*\)".*/\1/p')
+    fi
+fi
+
+# If no configuration was found via either method, exit gracefully
+if [ -z "$P2P_KEY_SEED" ] || [ -z "$KEY_BEARING_DEVICE_ID" ]; then
+    exit 0
+fi
+
+# Create a named pipe securely in /run (which is a strictly controlled tmpfs during boot)
+# mktemp -d ensures the directory is created atomically without race conditions!
+RUNDIR=$(mktemp -d /run/syncthing-luks.XXXXXX)
+FIFO="$RUNDIR/keyfifo"
+mkfifo "$FIFO"
+
+# 1. Start askpass (Clevis / Manual entry) in the background
+(
+    KEY=$(/lib/cryptsetup/askpass "Enter LUKS password (or wait for Syncthing): ")
+    if [ -n "$KEY" ]; then
+        echo "$KEY" > "$FIFO"
+    fi
+) &
+ASKPASS_PID=$!
+
+# 2. Start syncthing-socket polling in the background
+(
+    DELAY=1
+    MAX_DELAY=60
+    while true; do
+        # Run the client. stderr is redirected to console so you can see boot progress.
+        KEY=$(/bin/syncthing-socket client --passphrase "$P2P_KEY_SEED" --log-level error "$KEY_BEARING_DEVICE_ID" 2>/dev/console)
+        
+        if [ $? -eq 0 ] && [ -n "$KEY" ]; then
+            echo "$KEY" > "$FIFO"
+            break
+        fi
+        
+        sleep $DELAY
+        DELAY=$((DELAY * 2))
+        [ $DELAY -gt $MAX_DELAY ] && DELAY=$MAX_DELAY
+    done
+) &
+SYNC_PID=$!
+
+# Block until the first one writes to the FIFO
+KEY=$(cat "$FIFO")
+
+# Clean up the loser and the secure temporary directory
+kill $ASKPASS_PID 2>/dev/null
+kill $SYNC_PID 2>/dev/null
+rm -rf "$RUNDIR"
+
+# Output the winning key!
+echo -n "$KEY"
+exit 0
