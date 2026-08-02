@@ -61,7 +61,7 @@ jobs:
         uses: anchore/sbom-action@v0
         with:
           path: .
-          file: dist/syncthing-socket-sbom.spdx.json
+          output-file: dist/syncthing-socket-sbom.spdx.json
           format: spdx-json
 
       - name: Generate Checksums
