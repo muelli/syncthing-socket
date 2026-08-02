@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	_ "embed"
 	"encoding/json"
-	"github.com/spf13/cobra"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,14 +19,47 @@ import (
 	"time"
 
 	"github.com/blacktop/go-termimg"
-	qrterminal "github.com/mdp/qrterminal/v3"
+	"github.com/mdp/qrterminal/v3"
 	"github.com/pires/go-proxyproto"
 	"github.com/pquerna/otp/totp"
+	"github.com/spf13/cobra"
 	syncthingprotocol "github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/relay/client"
 	"github.com/syncthing/syncthing/lib/tlsutil"
 	"golang.org/x/term"
 )
+
+func init() {
+	// Intercept all requests made by the default HTTP client (which the vendored Syncthing library uses)
+	http.DefaultClient.Transport = &RateLimitTransport{
+		RoundTripper: http.DefaultTransport,
+	}
+}
+
+type RateLimitTransport struct {
+	http.RoundTripper
+}
+
+func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.RoundTripper.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	// Intercept requests to official Syncthing APIs (Relay and Discovery pools)
+	if strings.Contains(req.URL.Host, "syncthing.net") {
+		if resp.StatusCode >= 400 {
+			// Read the first 256 bytes to extract the HTML error page or Captive Portal message
+			bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+			resp.Body.Close()
+
+			slog.Warn("Syncthing API returned HTTP error", "url", req.URL.String(), "status", resp.StatusCode, "body_preview", string(bodyBytes))
+
+			return nil, fmt.Errorf("relay rate-limit or captive portal intercepted the connection (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+		}
+	}
+	return resp, nil
+}
 
 // Logging setup is in logging.go
 
