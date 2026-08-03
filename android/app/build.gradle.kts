@@ -69,7 +69,7 @@ tasks.register("buildGoMobile") {
                 if (file(goBin).exists()) {
                     cmd = goBin
                 }
-                commandLine(cmd, "bind", "-target=android", "-v", "-o", outputAar.absolutePath, "./mobile")
+                commandLine(cmd, "bind", "-target=android", "-androidapi", "26", "-v", "-o", outputAar.absolutePath, "./mobile")
                 workingDir(rootProject.projectDir.parentFile)
                 standardOutput = stdout
                 errorOutput = stderr
