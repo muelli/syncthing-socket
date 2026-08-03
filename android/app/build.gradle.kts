@@ -84,7 +84,7 @@ tasks.register("buildGoMobile") {
 
 // Ensure GoMobile runs before compilation
 tasks.whenTaskAdded {
-    if (name.startsWith("preBuild") || name.startsWith("compile")) {
+    if (name.startsWith("preBuild") || name.startsWith("compile") || name.startsWith("collect")) {
         dependsOn("buildGoMobile")
     }
 }
