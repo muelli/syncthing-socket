@@ -24,14 +24,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-    }
-    
-    lint {
-        checkReleaseBuilds = false
-        abortOnError = false
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -98,6 +93,7 @@ dependencies {
     implementation(fileTree("libs") { include("*.jar", "*.aar") })
     
     implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("androidx.activity:activity-compose:1.8.0")
     implementation(platform("androidx.compose:compose-bom:2023.03.00"))

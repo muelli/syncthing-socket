@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep Gomobile generated classes to prevent R8 from stripping them or crashing
+-keep class go.** { *; }
