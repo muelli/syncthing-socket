@@ -69,7 +69,7 @@ tasks.register("buildGoMobile") {
                 if (file(goBin).exists()) {
                     cmd = goBin
                 }
-                commandLine(cmd, "bind", "-target=android", "-androidapi", "26", "-v", "-o", outputAar.absolutePath, "syncthing-socket/mobile")
+                commandLine(cmd, "bind", "-target=android", "-androidapi", "26", "-v", "-ldflags=-checklinkname=0", "-o", outputAar.absolutePath, "syncthing-socket/mobile")
                 workingDir(rootProject.projectDir.parentFile)
                 standardOutput = stdout
                 errorOutput = stderr
