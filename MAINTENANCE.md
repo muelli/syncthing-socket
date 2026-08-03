@@ -65,3 +65,18 @@ export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
 # Run the CI pipeline locally
 ~/.local/bin/act
 ```
+
+## Technical Debt & Known Upstream Issues
+
+### Go 1.22 Pin (Android compilation)
+The project is currently pinned to **Go 1.22.0** (both in `go.mod` and `.github/workflows/build.yml`). 
+This is a stopgap workaround due to an upstream dependency issue that breaks Android cross-compilation on Go 1.23+.
+
+- **The Issue:** The networking library `github.com/wlynxg/anet` (a transitive dependency via `github.com/pion/ice`) uses the `go:linkname` compiler directive to access `net.zoneCache`, a private standard library variable. Starting in Go 1.23, the Go authors restricted `go:linkname` for unexported standard library symbols. This causes `gomobile bind` to fail with `invalid reference to net.zoneCache` during the C-Shared linking phase of the Android build.
+- **Monitoring Upstream:** You can periodically check if this issue has been resolved upstream by monitoring:
+  - `pion/ice` GitHub issues: [https://github.com/pion/ice/issues](https://github.com/pion/ice/issues)
+  - `wlynxg/anet` GitHub issues: [https://github.com/wlynxg/anet/issues](https://github.com/wlynxg/anet/issues)
+- **Resolution Path:** Once `pion/ice` removes the dependency or updates to a fixed version of `anet`, you can bump the Go version:
+  1. `go get -u github.com/pion/ice/v4@latest`
+  2. Change `go 1.22.0` to `go 1.25.0` (or later) in `go.mod`.
+  3. Change `go-version: '1.22'` to `go-version: '1.25.0'` in `.github/workflows/build.yml`.
