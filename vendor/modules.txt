@@ -121,7 +121,7 @@ github.com/pion/dtls/v3/pkg/protocol/alert
 github.com/pion/dtls/v3/pkg/protocol/extension
 github.com/pion/dtls/v3/pkg/protocol/handshake
 github.com/pion/dtls/v3/pkg/protocol/recordlayer
-# github.com/pion/ice/v4 v4.3.0
+# github.com/pion/ice/v4 v4.4.0
 ## explicit; go 1.24.0
 github.com/pion/ice/v4
 github.com/pion/ice/v4/internal/atomic
@@ -129,7 +129,7 @@ github.com/pion/ice/v4/internal/fakenet
 github.com/pion/ice/v4/internal/netutil
 github.com/pion/ice/v4/internal/stun
 github.com/pion/ice/v4/internal/taskloop
-# github.com/pion/interceptor v0.1.45
+# github.com/pion/interceptor v0.1.47
 ## explicit; go 1.24.0
 github.com/pion/interceptor
 github.com/pion/interceptor/internal/ntp
@@ -154,13 +154,13 @@ github.com/pion/randutil
 # github.com/pion/rtcp v1.2.17
 ## explicit; go 1.24.0
 github.com/pion/rtcp
-# github.com/pion/rtp v1.10.4
+# github.com/pion/rtp v1.10.5
 ## explicit; go 1.24.0
 github.com/pion/rtp
 github.com/pion/rtp/codecs
 github.com/pion/rtp/codecs/av1/obu
 github.com/pion/rtp/codecs/vp9
-# github.com/pion/sctp v1.11.0
+# github.com/pion/sctp v1.11.1
 ## explicit; go 1.24.0
 github.com/pion/sctp
 # github.com/pion/sdp/v3 v3.0.19
@@ -193,7 +193,7 @@ github.com/pion/turn/v5/internal/client
 github.com/pion/turn/v5/internal/ipnet
 github.com/pion/turn/v5/internal/proto
 github.com/pion/turn/v5/internal/server
-# github.com/pion/webrtc/v4 v4.2.17
+# github.com/pion/webrtc/v4 v4.2.18
 ## explicit; go 1.24.0
 github.com/pion/webrtc/v4
 github.com/pion/webrtc/v4/internal/fmtp
@@ -295,20 +295,6 @@ golang.org/x/crypto/scrypt
 ## explicit; go 1.25.0
 golang.org/x/image/draw
 golang.org/x/image/math/f64
-# golang.org/x/mobile v0.0.0-20260730202154-c700fe717e6e
-## explicit; go 1.25.0
-golang.org/x/mobile/bind
-golang.org/x/mobile/bind/java
-golang.org/x/mobile/bind/objc
-golang.org/x/mobile/bind/seq
-golang.org/x/mobile/cmd/gobind
-golang.org/x/mobile/internal/importers
-golang.org/x/mobile/internal/importers/java
-golang.org/x/mobile/internal/importers/objc
-golang.org/x/mobile/internal/mobileinit
-# golang.org/x/mod v0.38.0
-## explicit; go 1.25.0
-golang.org/x/mod/semver
 # golang.org/x/net v0.57.0
 ## explicit; go 1.25.0
 golang.org/x/net/bpf
@@ -320,9 +306,6 @@ golang.org/x/net/internal/socks
 golang.org/x/net/ipv4
 golang.org/x/net/ipv6
 golang.org/x/net/proxy
-# golang.org/x/sync v0.22.0
-## explicit; go 1.25.0
-golang.org/x/sync/errgroup
 # golang.org/x/sys v0.47.0
 ## explicit; go 1.25.0
 golang.org/x/sys/cpu
@@ -340,30 +323,9 @@ golang.org/x/term
 ## explicit; go 1.25.0
 golang.org/x/text/transform
 golang.org/x/text/unicode/norm
-# golang.org/x/time v0.14.0
-## explicit; go 1.24.0
-golang.org/x/time/rate
-# golang.org/x/tools v0.48.0
+# golang.org/x/time v0.15.0
 ## explicit; go 1.25.0
-golang.org/x/tools/go/ast/edge
-golang.org/x/tools/go/ast/inspector
-golang.org/x/tools/go/gcexportdata
-golang.org/x/tools/go/packages
-golang.org/x/tools/go/types/objectpath
-golang.org/x/tools/go/types/typeutil
-golang.org/x/tools/internal/aliases
-golang.org/x/tools/internal/event
-golang.org/x/tools/internal/event/core
-golang.org/x/tools/internal/event/keys
-golang.org/x/tools/internal/event/label
-golang.org/x/tools/internal/gcimporter
-golang.org/x/tools/internal/gocommand
-golang.org/x/tools/internal/packagesinternal
-golang.org/x/tools/internal/pkgbits
-golang.org/x/tools/internal/stdlib
-golang.org/x/tools/internal/typeparams
-golang.org/x/tools/internal/typesinternal
-golang.org/x/tools/internal/versions
+golang.org/x/time/rate
 # google.golang.org/protobuf v1.36.6
 ## explicit; go 1.22
 google.golang.org/protobuf/encoding/protodelim
