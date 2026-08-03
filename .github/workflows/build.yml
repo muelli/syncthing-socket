@@ -142,15 +142,14 @@ jobs:
           go install golang.org/x/mobile/cmd/gobind@latest
           gomobile init
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.4'
+
       - name: Build Android APK
         working-directory: android
-        run: |
-          chmod +x ./gradlew || true
-          if [ -f "gradlew" ]; then
-            ./gradlew assembleRelease
-          else
-            gradle assembleRelease
-          fi
+        run: gradle assembleRelease
 
       - name: Sign Android APK
         env:
