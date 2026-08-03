@@ -152,6 +152,28 @@ jobs:
             gradle assembleRelease
           fi
 
+      - name: Sign Android APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android/app/build/outputs/apk/release
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -n 1)
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > keystore.jks
+            $BUILD_TOOLS/zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
+            $BUILD_TOOLS/apksigner sign --ks keystore.jks --ks-pass "pass:$KEYSTORE_PASS" --ks-key-alias "$ALIAS" --key-pass "pass:$KEY_PASS" --out syncthing-socket.apk app-release-aligned.apk
+            rm keystore.jks app-release-unsigned.apk app-release-aligned.apk
+          else
+            echo "Warning: ANDROID_KEYSTORE_B64 is not set. Generating a temporary keystore. Android will reject OTA updates if this key changes on the next run."
+            keytool -genkey -v -keystore keystore.jks -alias release -keyalg RSA -keysize 2048 -validity 10000 -storepass temporarypassword -keypass temporarypassword -dname "CN=Syncthing LUKS, OU=App, O=muelli, C=US"
+            $BUILD_TOOLS/zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
+            $BUILD_TOOLS/apksigner sign --ks keystore.jks --ks-pass pass:temporarypassword --ks-key-alias release --key-pass pass:temporarypassword --out syncthing-socket.apk app-release-aligned.apk
+            rm keystore.jks app-release-unsigned.apk app-release-aligned.apk
+          fi
+
       - name: Generate Android SBOM
         uses: anchore/sbom-action@v0
         with:
