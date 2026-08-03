@@ -1,0 +1,69 @@
+name: Deploy F-Droid Repository
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install fdroidserver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fdroidserver
+
+      - name: Download Release APKs
+        uses: dsaltares/fetch-gh-release-asset@master
+        with:
+          file: '.*\.apk$'
+          regex: true
+          target: 'repo/'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup F-Droid Keystore
+        run: |
+          mkdir -p fdroid
+          if [ -n "${{ secrets.FDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.FDROID_KEYSTORE_BASE64 }}" | base64 -d > fdroid/keystore.jks
+            echo "Keystore restored from secrets."
+          else
+            echo "Warning: FDROID_KEYSTORE_BASE64 secret is not set. Generating a temporary keystore. F-Droid clients will reject updates if this key changes on the next run."
+            keytool -genkey -v -keystore fdroid/keystore.jks -alias fdroid -keyalg RSA -keysize 4096 -validity 10000 -storepass "temporarypassword" -keypass "temporarypassword" -dname "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
+          fi
+
+      - name: Initialize and Update F-Droid Repo
+        run: |
+          # Create config.yml
+          cd fdroid
+          cat <<EOF > config.yml
+          repo_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo
+          repo_name: Syncthing LUKS F-Droid Repository
+          repo_icon: icon.png
+          repo_description: Official F-Droid repository for the Syncthing LUKS Unlocker app.
+          keystore: keystore.jks
+          keystorepass: \${{ secrets.FDROID_KEYSTORE_PASSWORD || 'temporarypassword' }}
+          keypass: \${{ secrets.FDROID_KEYSTORE_PASSWORD || 'temporarypassword' }}
+          keydname: "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
+          EOF
+          
+          # Ensure repo dir exists and copy downloaded APKs
+          mkdir -p repo
+          cp -r ../repo/*.apk repo/ 2>/dev/null || echo "No APKs found to copy."
+          
+          # Run fdroid update to scan APKs and generate index
+          fdroid update -c
+          
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./fdroid
+          keep_files: false
