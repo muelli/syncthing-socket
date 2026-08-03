@@ -1,0 +1,10 @@
+Syncthing LUKS Unlocker allows you to remotely unlock your Linux laptop's encrypted hard drive during the boot phase (initramfs). 
+
+Using the Syncthing global relay network, it establishes a secure, NAT-traversing WebRTC connection to your laptop, retrieves your long LUKS passphrase from your phone's Android Secure Keystore, and transmits it instantly with a single biometric tap.
+
+Features:
+- No need to type long passphrases on your laptop keyboard
+- Fully open-source (AGPLv3+)
+- Uses Android Secure Hardware Keystore for encryption
+- Connects globally without port forwarding (Syncthing Relays)
+- Zero tracking or analytics

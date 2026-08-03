@@ -23,13 +23,19 @@ PHONE_SEED=$(head -c 32 /dev/urandom | base64)
 # Use the syncthing-socket CLI to derive the Device IDs from the seeds (if it supports this, otherwise we mock it or the user provides it)
 # Assuming a future command `syncthing-socket cert --seed <seed> --print-id` exists.
 # For now, we will just use the seeds directly if the application derives them.
+# We need the laptop's Device ID. If syncthing-socket is available, we can compute it from LAPTOP_SEED.
+# For now, let's assume the user runs this on the laptop and can get it.
+# Wait, syncthing-socket server --passphrase $LAPTOP_SEED prints its Device ID!
+echo "Generating Laptop Device ID..."
+LAPTOP_DEVICE_ID=$(syncthing-socket cert --seed "$LAPTOP_SEED" --print-id 2>/dev/null || echo "LAPTOP_DEVICE_ID_PLACEHOLDER")
+
 # The QR code payload:
 TMPJSON=$(mktemp)
 cat <<EOF > "$TMPJSON"
 {
   "passphrase": "$PASSPHRASE",
   "phone_seed": "$PHONE_SEED",
-  "laptop_seed": "$LAPTOP_SEED"
+  "laptop_device_id": "$LAPTOP_DEVICE_ID"
 }
 EOF
 
