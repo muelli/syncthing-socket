@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"bytes"
@@ -112,7 +112,7 @@ var (
 	logoANSI string
 )
 
-func main() {
+func Execute() {
 	setupProxyEnvironment()
 
 	var rootCmd = &cobra.Command{
@@ -158,7 +158,7 @@ func main() {
 			var cert tls.Certificate
 			var err error
 			if serverPassphrase != "" {
-				cert, err = generateDeterministicCert(serverPassphrase + "server")
+				cert, err = GenerateDeterministicCert(serverPassphrase + "server")
 			} else if serverCert != "" && serverKey != "" {
 				cert, err = loadOrGenerateCert(serverCert, serverKey)
 			} else if serverCert == "" && serverKey == "" {
@@ -290,7 +290,7 @@ func main() {
 			}
 
 			if clientPassphrase != "" {
-				serverCertStruct, _ := generateDeterministicCert(clientPassphrase + "server")
+				serverCertStruct, _ := GenerateDeterministicCert(clientPassphrase + "server")
 				derivedID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0]).String()
 				if serverID == "" {
 					serverID = derivedID
@@ -302,7 +302,7 @@ func main() {
 			var cert tls.Certificate
 			var err error
 			if clientPassphrase != "" {
-				cert, err = generateDeterministicCert(clientPassphrase + "client")
+				cert, err = GenerateDeterministicCert(clientPassphrase + "client")
 			} else if clientCert != "" && clientKey != "" {
 				cert, err = loadOrGenerateCert(clientCert, clientKey)
 			} else if clientCert == "" && clientKey == "" {
@@ -319,7 +319,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			if err := runClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward, clientTOTP); err != nil {
+			if err := RunClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward, clientTOTP); err != nil {
 				slog.Error("Client error", "error", err)
 				os.Exit(1)
 			}
@@ -347,14 +347,14 @@ func main() {
 				os.Exit(1)
 			}
 			
-			serverCertStruct, err := generateDeterministicCert(idPassphrase + "server")
+			serverCertStruct, err := GenerateDeterministicCert(idPassphrase + "server")
 			if err != nil {
 				fmt.Println("Error generating server cert:", err)
 				os.Exit(1)
 			}
 			serverID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0])
 			
-			clientCertStruct, err := generateDeterministicCert(idPassphrase + "client")
+			clientCertStruct, err := GenerateDeterministicCert(idPassphrase + "client")
 			if err != nil {
 				fmt.Println("Error generating client cert:", err)
 				os.Exit(1)
@@ -780,7 +780,7 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 	}
 }
 
-func runClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string, totpPasscode string) error {
+func RunClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string, totpPasscode string) error {
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)

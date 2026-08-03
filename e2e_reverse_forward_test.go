@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 )
 
 func TestReverseForwardP2P(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestReverseForwardP2P(t *testing.T) {
 }
 
 func TestReverseForwardUnixSocket(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}

@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestCommandExecutionP2P(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-command-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-command-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}

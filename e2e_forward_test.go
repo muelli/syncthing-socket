@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ import (
 
 func TestForwardProxyProtocolV2(t *testing.T) {
 	// 1. Build binary
-	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestForwardProxyProtocolV2(t *testing.T) {
 }
 
 func TestForwardUnixSocket(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}

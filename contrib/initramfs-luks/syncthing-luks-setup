@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e
+
+if ! command -v qrencode &> /dev/null; then
+    echo "Error: qrencode is required. Please install it (e.g. apt install qrencode)."
+    exit 1
+fi
+
+DEVICE=$1
+if [ -z "$DEVICE" ]; then
+    echo "Usage: syncthing-luks-setup <luks-device>"
+    exit 1
+fi
+
+echo -n "Enter the LUKS passphrase for $DEVICE (will be hidden): "
+read -s PASSPHRASE
+echo ""
+
+# Generate cryptographic seeds
+LAPTOP_SEED=$(head -c 32 /dev/urandom | base64)
+PHONE_SEED=$(head -c 32 /dev/urandom | base64)
+
+# Use the syncthing-socket CLI to derive the Device IDs from the seeds (if it supports this, otherwise we mock it or the user provides it)
+# Assuming a future command `syncthing-socket cert --seed <seed> --print-id` exists.
+# For now, we will just use the seeds directly if the application derives them.
+# The QR code payload:
+TMPJSON=$(mktemp)
+cat <<EOF > "$TMPJSON"
+{
+  "passphrase": "$PASSPHRASE",
+  "phone_seed": "$PHONE_SEED",
+  "laptop_seed": "$LAPTOP_SEED"
+}
+EOF
+
+# Show QR Code
+echo ""
+echo "================================================================="
+echo "Scan this QR code with the Syncthing LUKS Unlocker Android App:"
+echo "================================================================="
+qrencode -t ANSIUTF8 < "$TMPJSON"
+echo "================================================================="
+
+# Clean up sensitive data
+rm -f "$TMPJSON"
+
+# Finally, bind the laptop seed and the phone's device ID to the LUKS header
+# The phone's device ID is deterministically derived from PHONE_SEED.
+echo ""
+echo "Note: To complete setup, we need the Phone's Device ID to authorize it."
+echo "Since the phone derives its ID from PHONE_SEED, you will need to run:"
+echo "syncthing-luks-bind $DEVICE \"$LAPTOP_SEED\" \"<PHONE_DEVICE_ID>\""
+echo ""

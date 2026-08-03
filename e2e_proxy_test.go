@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"fmt"
@@ -45,7 +45,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestHTTPProxyRouting(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-proxy-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-proxy-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}

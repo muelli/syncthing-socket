@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 
 func TestSocksProxyE2E(t *testing.T) {
 	// 1. Build the binary
-	cmdBuild := exec.Command("go", "build", "-o", "test-syncthing-socket", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-syncthing-socket", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}

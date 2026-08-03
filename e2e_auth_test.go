@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"bytes"
@@ -33,7 +33,7 @@ func (s *SafeBuffer) String() string {
 }
 
 func getClientDeviceID(t *testing.T, clientPassphrase string) string {
-	cert, err := generateDeterministicCert(clientPassphrase + "client")
+	cert, err := GenerateDeterministicCert(clientPassphrase + "client")
 	if err != nil {
 		t.Fatalf("Failed to generate cert for client passphrase %q: %v", clientPassphrase, err)
 	}
@@ -41,7 +41,7 @@ func getClientDeviceID(t *testing.T, clientPassphrase string) string {
 }
 
 func getServerDeviceID(t *testing.T, serverPassphrase string) string {
-	cert, err := generateDeterministicCert(serverPassphrase + "server")
+	cert, err := GenerateDeterministicCert(serverPassphrase + "server")
 	if err != nil {
 		t.Fatalf("Failed to generate cert for server passphrase %q: %v", serverPassphrase, err)
 	}
@@ -50,7 +50,7 @@ func getServerDeviceID(t *testing.T, serverPassphrase string) string {
 
 
 func buildTestAuthBinary(t *testing.T) {
-	cmdBuild := exec.Command("go", "build", "-o", "test-auth-binary", ".")
+	cmdBuild := exec.Command("go", "build", "-o", "test-auth-binary", "./cmd/syncthing-socket")
 	if err := cmdBuild.Run(); err != nil {
 		t.Fatalf("Failed to build test-auth-binary: %v", err)
 	}

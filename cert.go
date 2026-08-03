@@ -1,4 +1,4 @@
-package main
+package socket
 
 import (
 	"crypto/ed25519"
@@ -19,7 +19,7 @@ func (zeroReader) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func generateDeterministicCert(seed string) (tls.Certificate, error) {
+func GenerateDeterministicCert(seed string) (tls.Certificate, error) {
 	h := sha256.Sum256([]byte(seed))
 	priv := ed25519.NewKeyFromSeed(h[:])
 

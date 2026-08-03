@@ -41,16 +41,16 @@ jobs:
           export CGO_ENABLED=0
           
           # Build for Linux (AMD64)
-          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-linux-amd64 .
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-linux-amd64 ./cmd/syncthing-socket
           
           # Build for macOS (Intel)
-          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-amd64 .
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-amd64 ./cmd/syncthing-socket
           
           # Build for macOS (Apple Silicon M1/M2/M3)
-          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-arm64 .
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-arm64 ./cmd/syncthing-socket
           
           # Build for Windows (AMD64)
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-windows-amd64.exe .
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-windows-amd64.exe ./cmd/syncthing-socket
 
           # Create official source tarball containing the VERSION file for OS packagers
           echo "$VERSION" > VERSION
