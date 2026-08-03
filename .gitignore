@@ -1,5 +1,5 @@
 # Compiled binary
-syncthing-socket
+/syncthing-socket
 
 # TLS certificates
 cert.pem
