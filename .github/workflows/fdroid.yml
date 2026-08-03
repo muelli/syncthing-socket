@@ -29,19 +29,20 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup F-Droid Keystore
+        env:
+          MASTER_SECRET: ${{ secrets.MASTER_SECRET }}
         run: |
           mkdir -p fdroid
-          if [ -n "${{ secrets.FDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.FDROID_KEYSTORE_BASE64 }}" | base64 -d > fdroid/keystore.jks
-            echo "Keystore restored from secrets."
+          if [ -n "$MASTER_SECRET" ] && [ -f "android/keystore.jks.enc" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in android/keystore.jks.enc -out fdroid/keystore.jks -pass pass:$MASTER_SECRET
+            echo "Keystore decrypted successfully."
           else
-            echo "Warning: FDROID_KEYSTORE_BASE64 secret is not set. Generating a temporary keystore. F-Droid clients will reject updates if this key changes on the next run."
-            keytool -genkey -v -keystore fdroid/keystore.jks -alias fdroid -keyalg RSA -keysize 4096 -validity 10000 -storepass "temporarypassword" -keypass "temporarypassword" -dname "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
+            echo "Warning: MASTER_SECRET is not set or keystore.jks.enc missing. Generating temporary keystore."
+            keytool -genkey -v -keystore fdroid/keystore.jks -alias fdroid -keyalg RSA -keysize 4096 -validity 10000 -storepass syncthing -keypass syncthing -dname "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
           fi
 
       - name: Initialize and Update F-Droid Repo
         run: |
-          # Create config.yml
           cd fdroid
           cat <<EOF > config.yml
           repo_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo
@@ -49,9 +50,9 @@ jobs:
           repo_icon: icon.png
           repo_description: Official F-Droid repository for the Syncthing LUKS Unlocker app.
           keystore: keystore.jks
-          keystorepass: \${{ secrets.FDROID_KEYSTORE_PASSWORD || 'temporarypassword' }}
-          keypass: \${{ secrets.FDROID_KEYSTORE_PASSWORD || 'temporarypassword' }}
-          keydname: "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
+          keystorepass: syncthing
+          keypass: syncthing
+          keydname: "CN=FDroid, O=SyncthingLUKS"
           EOF
           
           # Ensure repo dir exists and copy downloaded APKs
