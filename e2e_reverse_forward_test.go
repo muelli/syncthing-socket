@@ -15,7 +15,9 @@ import (
 
 func TestReverseForwardP2P(t *testing.T) {
 	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", "./cmd/syncthing-socket")
-	if err := cmdBuild.Run(); err != nil {
+	out, err := cmdBuild.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, string(out))
 		t.Fatalf("Failed to build binary: %v", err)
 	}
 
@@ -101,7 +103,9 @@ func TestReverseForwardP2P(t *testing.T) {
 
 func TestReverseForwardUnixSocket(t *testing.T) {
 	cmdBuild := exec.Command("go", "build", "-o", "test-revfwd-binary", "./cmd/syncthing-socket")
-	if err := cmdBuild.Run(); err != nil {
+	out, err := cmdBuild.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, string(out))
 		t.Fatalf("Failed to build binary: %v", err)
 	}
 

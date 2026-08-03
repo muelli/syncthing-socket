@@ -18,7 +18,9 @@ import (
 func TestForwardProxyProtocolV2(t *testing.T) {
 	// 1. Build binary
 	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", "./cmd/syncthing-socket")
-	if err := cmdBuild.Run(); err != nil {
+	out, err := cmdBuild.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, string(out))
 		t.Fatalf("Failed to build binary: %v", err)
 	}
 
@@ -115,7 +117,9 @@ func TestForwardProxyProtocolV2(t *testing.T) {
 
 func TestForwardUnixSocket(t *testing.T) {
 	cmdBuild := exec.Command("go", "build", "-o", "test-forward-binary", "./cmd/syncthing-socket")
-	if err := cmdBuild.Run(); err != nil {
+	out, err := cmdBuild.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, string(out))
 		t.Fatalf("Failed to build binary: %v", err)
 	}
 
