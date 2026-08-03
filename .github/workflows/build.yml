@@ -158,13 +158,14 @@ jobs:
         run: |
           cd android/app/build/outputs/apk/release
           BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -n 1)
-          if [ -n "$MASTER_SECRET" ] && [ -f "../../../../../../keystore.jks.enc" ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in ../../../../../../keystore.jks.enc -out keystore.jks -pass pass:$MASTER_SECRET
+          if [ -n "$MASTER_SECRET" ]; then
+            go run ../../../../../../scripts/generate_keystore.go "$MASTER_SECRET" app
+            openssl pkcs12 -export -out keystore.p12 -inkey key_app.pem -in cert_app.pem -passout pass:syncthing -name release
             $BUILD_TOOLS/zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
-            $BUILD_TOOLS/apksigner sign --ks keystore.jks --ks-pass pass:syncthing --ks-key-alias release --key-pass pass:syncthing --out syncthing-socket.apk app-release-aligned.apk
-            rm keystore.jks app-release-unsigned.apk app-release-aligned.apk
+            $BUILD_TOOLS/apksigner sign --ks keystore.p12 --ks-pass pass:syncthing --ks-key-alias release --key-pass pass:syncthing --out syncthing-socket.apk app-release-aligned.apk
+            rm keystore.p12 key_app.pem cert_app.pem app-release-unsigned.apk app-release-aligned.apk
           else
-            echo "Warning: MASTER_SECRET is not set or keystore.jks.enc is missing. Generating a temporary keystore."
+            echo "Warning: MASTER_SECRET is not set. Generating a temporary keystore."
             keytool -genkey -v -keystore keystore.jks -alias release -keyalg RSA -keysize 2048 -validity 10000 -storepass syncthing -keypass syncthing -dname "CN=Syncthing LUKS, OU=App, O=muelli, C=US"
             $BUILD_TOOLS/zipalign -v -p 4 app-release-unsigned.apk app-release-aligned.apk
             $BUILD_TOOLS/apksigner sign --ks keystore.jks --ks-pass pass:syncthing --ks-key-alias release --key-pass pass:syncthing --out syncthing-socket.apk app-release-aligned.apk

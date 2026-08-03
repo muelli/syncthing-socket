@@ -1,9 +1,9 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rsa"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -17,18 +17,6 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-type cipherReader struct {
-	stream cipher.Stream
-}
-
-func (c *cipherReader) Read(p []byte) (n int, err error) {
-	for i := range p {
-		p[i] = 0
-	}
-	c.stream.XORKeyStream(p, p)
-	return len(p), nil
-}
-
 func main() {
 	if len(os.Args) != 3 {
 		fmt.Println("Usage: go run generate_keystore.go <master_seed> <context>")
@@ -37,29 +25,24 @@ func main() {
 	seed := os.Args[1]
 	context := os.Args[2]
 
-	// Use HKDF to derive a 32-byte AES key and 16-byte nonce from the seed
 	hkdfReader := hkdf.New(sha256.New, []byte(seed), []byte("syncthing-luks"), []byte(context))
 	key := make([]byte, 32)
-	nonce := make([]byte, 16)
 	io.ReadFull(hkdfReader, key)
-	io.ReadFull(hkdfReader, nonce)
 
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
+	// Construct ECDSA P-256 key deterministically
+	d := new(big.Int).SetBytes(key)
+	priv := &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{
+			Curve: elliptic.P256(),
+		},
+		D: d,
 	}
+	priv.PublicKey.X, priv.PublicKey.Y = priv.PublicKey.Curve.ScalarBaseMult(key)
 
-	// Create an infinite stream of zeros, encrypted with AES-CTR
-	stream := cipher.NewCTR(block, nonce)
-	randReader := &cipherReader{stream: stream}
+	// Provide a dummy random reader for blinding during signature generation
+	// (CreateCertificate might still use it for blinding, but the key itself is deterministic)
+	dummyRand := rand.Reader
 
-	// Generate RSA 2048 key
-	priv, err := rsa.GenerateKey(randReader, 2048)
-	if err != nil {
-		panic(err)
-	}
-
-	// Create a self-signed certificate
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -73,14 +56,18 @@ func main() {
 		BasicConstraintsValid: true,
 	}
 
-	derBytes, err := x509.CreateCertificate(randReader, &template, &template, &priv.PublicKey, priv)
+	derBytes, err := x509.CreateCertificate(dummyRand, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		panic(err)
 	}
 
 	// Write Private Key
+	privBytes, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		panic(err)
+	}
 	keyOut, _ := os.Create("key_" + context + ".pem")
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: privBytes})
 	keyOut.Close()
 
 	// Write Cert

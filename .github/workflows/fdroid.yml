@@ -33,12 +33,13 @@ jobs:
           MASTER_SECRET: ${{ secrets.MASTER_SECRET }}
         run: |
           mkdir -p fdroid
-          if [ -n "$MASTER_SECRET" ] && [ -f "android/keystore.jks.enc" ]; then
-            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in android/keystore.jks.enc -out fdroid/keystore.jks -pass pass:$MASTER_SECRET
-            echo "Keystore decrypted successfully."
+          if [ -n "$MASTER_SECRET" ]; then
+            go run scripts/generate_keystore.go "$MASTER_SECRET" fdroid
+            openssl pkcs12 -export -out fdroid/keystore.p12 -inkey key_fdroid.pem -in cert_fdroid.pem -passout pass:syncthing -name fdroid
+            rm key_fdroid.pem cert_fdroid.pem
           else
-            echo "Warning: MASTER_SECRET is not set or keystore.jks.enc missing. Generating temporary keystore."
-            keytool -genkey -v -keystore fdroid/keystore.jks -alias fdroid -keyalg RSA -keysize 4096 -validity 10000 -storepass syncthing -keypass syncthing -dname "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
+            echo "Warning: MASTER_SECRET is not set. Generating temporary keystore."
+            keytool -genkey -v -keystore fdroid/keystore.p12 -storetype PKCS12 -alias fdroid -keyalg RSA -keysize 4096 -validity 10000 -storepass syncthing -keypass syncthing -dname "CN=Syncthing LUKS, OU=F-Droid, O=muelli, C=US"
           fi
 
       - name: Initialize and Update F-Droid Repo
@@ -49,10 +50,10 @@ jobs:
           repo_name: Syncthing LUKS F-Droid Repository
           repo_icon: icon.png
           repo_description: Official F-Droid repository for the Syncthing LUKS Unlocker app.
-          keystore: keystore.jks
+          keystore: keystore.p12
           keystorepass: syncthing
           keypass: syncthing
-          keydname: "CN=FDroid, O=SyncthingLUKS"
+          keydname: "CN=Syncthing LUKS fdroid, O=Syncthing LUKS"
           EOF
           
           # Ensure repo dir exists and copy downloaded APKs
