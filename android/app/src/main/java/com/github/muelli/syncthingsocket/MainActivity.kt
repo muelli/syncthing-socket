@@ -1,4 +1,4 @@
-package com.muelli.syncthingluks
+package com.github.muelli.syncthingsocket
 
 import android.Manifest
 import android.content.Context

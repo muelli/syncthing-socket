@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.muelli.syncthingluks"
+    namespace = "com.github.muelli.syncthingsocket"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.muelli.syncthingluks"
+        applicationId = "com.github.muelli.syncthingsocket"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
