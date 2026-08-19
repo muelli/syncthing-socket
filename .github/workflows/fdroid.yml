@@ -18,7 +18,7 @@ jobs:
       - name: Install fdroidserver
         run: |
           sudo apt-get update
-          sudo apt-get install -y fdroidserver
+          sudo apt-get install -y fdroidserver qrencode
 
       - name: Download Release APKs
         uses: dsaltares/fetch-gh-release-asset@master
@@ -62,6 +62,22 @@ jobs:
           
           # Run fdroid update to scan APKs and generate index
           fdroid update -c
+          
+          # Compute the repo fingerprint for the landing page / add-repo link.
+          FP="$(keytool -list -v -keystore keystore.p12 -storepass syncthing -alias fdroid \
+                | awk -F': ' '/SHA256:/{gsub(/:/,"",$2); print tolower($2); exit}')"
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
+          ADD_URL="${REPO_URL}?fingerprint=${FP}"
+          touch .nojekyll
+
+          # QR code that F-Droid's "Add repository" scanner understands.
+          qrencode -o qr.png -s 8 -m 2 "$ADD_URL"
+
+          # Landing page: rendered from the committed template
+          if [ -f landing.html ]; then
+            sed -e "s|{{REPO_URL}}|${REPO_URL}|g" -e "s|{{FINGERPRINT}}|${FP}|g" \
+                landing.html > index.html
+          fi
           
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

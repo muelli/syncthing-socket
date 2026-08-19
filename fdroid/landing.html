@@ -1,0 +1,258 @@
+<!doctype html>
+<!--
+SPDX-FileCopyrightText: 2026 Tobias Mueller and Syncthing LUKS contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+Landing page for the self-hosted F-Droid repository. Published by
+.github/workflows/publish-fdroid.yml, which substitutes {{REPO_URL}} and
+{{FINGERPRINT}}. The app list is rendered client-side from the repository's
+own index (fdroid/repo/index-v2.json), so it is always current. Everything is
+self-contained: no external scripts, styles, fonts, or trackers.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syncthing LUKS F-Droid repository</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #555;
+    --card: #f5f6f5; --border: #d5d9d6; --accent: #2E6C4D; --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121412; --fg: #e8eae8; --muted: #a5aaa6;
+      --card: #1d211e; --border: #3a403b; --accent: #93D5AC; --accent-fg: #10281a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 system-ui, sans-serif;
+  }
+  header, main, footer { max-width: 46rem; margin: 0 auto; padding: 0 1rem; }
+  header { padding-top: 2rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; }
+  a { color: var(--accent); }
+  a:focus-visible, input:focus-visible, summary:focus-visible, button:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 2px;
+  }
+  code {
+    word-break: break-all; background: var(--card);
+    border: 1px solid var(--border); padding: .1em .35em; border-radius: .3em;
+    font-size: .9em;
+  }
+  .lede { color: var(--muted); margin-top: 0; }
+  .addbox {
+    display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: .75rem; padding: 1rem; margin-top: 1rem;
+  }
+  .addbox img { width: 164px; height: 164px; image-rendering: pixelated;
+                border: 1px solid var(--border); border-radius: .4rem; background: #fff; }
+  .addbox div { flex: 1 1 16rem; }
+  .btn {
+    display: inline-block; background: var(--accent); color: var(--accent-fg);
+    padding: .5rem .9rem; border-radius: .5rem; text-decoration: none; font-weight: 600;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .search { margin: 1rem 0 .25rem; }
+  .search label { display: block; font-weight: 600; margin-bottom: .3rem; }
+  .search input {
+    width: 100%; padding: .6rem .8rem; font: inherit; color: inherit;
+    background: var(--bg); border: 1px solid var(--border); border-radius: .5rem;
+  }
+  #count { color: var(--muted); font-size: .9rem; min-height: 1.4em; display: block; }
+  .app {
+    display: flex; gap: 1rem; background: var(--card); border: 1px solid var(--border);
+    border-radius: .75rem; padding: 1rem; margin: 1rem 0;
+  }
+  .app img { width: 64px; height: 64px; border-radius: .6rem; flex: none; }
+  .shots { display: flex; gap: .5rem; overflow-x: auto; padding: .25rem 0 .5rem; }
+  .shots a { flex: none; }
+  .shots img {
+    height: 190px; width: auto; display: block;
+    border: 1px solid var(--border); border-radius: .5rem;
+  }
+  .app h3 { margin: 0; font-size: 1.15rem; }
+  .app .body { min-width: 0; flex: 1; }
+  .app .sum { margin: .15rem 0 .5rem; color: var(--muted); }
+  .app .meta { font-size: .85rem; color: var(--muted); }
+  details { margin-top: .5rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { white-space: pre-wrap; margin: .5rem 0 0; }
+  ul.versions { margin: .5rem 0 0; padding-left: 1.2rem; }
+  footer {
+    margin-top: 3rem; padding: 1.5rem 1rem 2rem; color: var(--muted);
+    font-size: .9rem; border-top: 1px solid var(--border);
+  }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Syncthing LUKS F-Droid repository</h1>
+  <p class="lede">Free-software Android apps, built from source and signed by this
+     repository. Add it to the <a href="https://f-droid.org/">F-Droid</a> app to
+     install and receive updates.</p>
+
+  <div class="addbox">
+    <img src="qr.png" alt="QR code encoding this repository's address and fingerprint">
+    <div>
+      <p><strong>Add this repository:</strong> scan the QR code with F-Droid
+         (<i>Settings → Repositories → +</i>), or on your phone
+         <a class="btn" href="fdroidrepos:{{REPO_URL}}?fingerprint={{FINGERPRINT}}">tap here to add it</a></p>
+      <p>Or enter it by hand:<br>
+         URL: <code>{{REPO_URL}}</code><br>
+         Fingerprint: <code>{{FINGERPRINT}}</code></p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <h2 id="apps-heading">Apps in this repository</h2>
+  <div class="search" role="search">
+    <label for="q">Search apps</label>
+    <input id="q" type="search" placeholder="Name, description, package…"
+           autocomplete="off" aria-describedby="count">
+  </div>
+  <span id="count" role="status" aria-live="polite"></span>
+  <div id="apps" aria-labelledby="apps-heading">
+    <noscript><p>Enable JavaScript to browse the app list here, or add the
+      repository in F-Droid — it works without JavaScript.</p></noscript>
+  </div>
+</main>
+
+<footer>
+  <p>Every APK is built from public source code and passes F-Droid's scanner for
+     non-free components — each app links its freedom report above.</p>
+  <p><strong>Don't trust, verify:</strong> builds are reproducible and every
+     release is recorded in the public Sigstore transparency log —
+     <a href="https://github.com/muelli/Syncthing LUKS/blob/main/docs/TRANSPARENCY.md">how
+     to verify</a>. APK signing certificate (SHA-256):
+     <code>8f02760a5c600a686c7ff452521c7a4be9f8ced922cdc7f9fc639b068625c289</code></p>
+  <p><a href="https://github.com/muelli/Syncthing LUKS">Source code, issues and
+     documentation on GitHub</a>.</p>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var REPO = "fdroid/repo";
+  var appsEl = document.getElementById("apps");
+  var countEl = document.getElementById("count");
+  var qEl = document.getElementById("q");
+
+  function loc(v) { // pick a localized string: en-US, then any
+    if (v == null || typeof v !== "object") return v || "";
+    return v["en-US"] || v[Object.keys(v)[0]] || "";
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmtSize(n) {
+    if (!n) return "";
+    return n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " kB";
+  }
+  function fmtDate(ms) {
+    if (!ms) return "";
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (e) { return ""; }
+  }
+
+  fetch(REPO + "/index-v2.json")
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (index) {
+      var apps = Object.keys(index.packages || {}).map(function (id) {
+        var p = index.packages[id];
+        var versions = Object.values(p.versions || {}).sort(function (a, b) {
+          return (b.manifest.versionCode || 0) - (a.manifest.versionCode || 0);
+        });
+        var iconPath = p.metadata.icon && loc(p.metadata.icon).name;
+        var shots = [];
+        if (p.metadata.screenshots) {
+          Object.values(p.metadata.screenshots).forEach(function (byLocale) {
+            (loc(byLocale) || []).forEach(function (s) { shots.push(REPO + s.name); });
+          });
+        }
+        return {
+          id: id,
+          name: loc(p.metadata.name) || id,
+          summary: loc(p.metadata.summary) || "",
+          description: loc(p.metadata.description) || "",
+          icon: iconPath ? REPO + iconPath : null,
+          screenshots: shots,
+          versions: versions
+        };
+      }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+      // A search bar for a handful of apps is noise; show it only once the
+      // repository is big enough for filtering to help.
+      if (apps.length < 4) {
+        document.querySelector(".search").hidden = true;
+        countEl.hidden = true;
+      }
+
+      function render(filter) {
+        var f = (filter || "").trim().toLowerCase();
+        var shown = apps.filter(function (a) {
+          return !f || (a.name + " " + a.summary + " " + a.description + " " + a.id)
+            .toLowerCase().indexOf(f) !== -1;
+        });
+        appsEl.innerHTML = shown.map(function (a) {
+          var latest = a.versions[0];
+          var older = a.versions.slice(1);
+          var apk = latest && REPO + latest.file.name;
+          return '<article class="app" aria-label="' + esc(a.name) + '">'
+            + (a.icon ? '<img src="' + esc(a.icon) + '" alt="">' : "")
+            + '<div class="body">'
+            + "<h3>" + esc(a.name) + "</h3>"
+            + '<p class="sum">' + esc(a.summary) + "</p>"
+            + (a.screenshots.length
+                ? '<div class="shots" role="group" aria-label="Screenshots of ' + esc(a.name) + '">'
+                  + a.screenshots.map(function (s, i) {
+                      return '<a href="' + esc(s) + '"><img src="' + esc(s)
+                        + '" loading="lazy" alt="Screenshot ' + (i + 1) + " of "
+                        + esc(a.name) + '"></a>';
+                    }).join("") + "</div>" : "")
+            + (latest ? '<p class="meta">Latest: version ' + esc(latest.manifest.versionName)
+                + " (" + fmtSize(latest.file.size) + ", " + fmtDate(latest.added) + ") · "
+                + '<a href="' + esc(apk) + '">download APK</a> · '
+                + '<a href="freedom-report-' + esc(a.id) + '-' + esc(latest.manifest.versionCode) + '.txt">freedom report</a></p>' : "")
+            + (a.description
+                ? "<details><summary>Full description</summary><p>"
+                  + esc(a.description) + "</p></details>" : "")
+            + (older.length
+                ? "<details><summary>Older versions (" + older.length + ")</summary>"
+                  + '<ul class="versions">' + older.map(function (v) {
+                      return "<li>version " + esc(v.manifest.versionName)
+                        + " (" + fmtSize(v.file.size) + ") — "
+                        + '<a href="' + esc(REPO + v.file.name) + '">APK</a> · '
+                        + '<a href="freedom-report-' + esc(a.id) + '-' + esc(v.manifest.versionCode) + '.txt">freedom report</a></li>';
+                    }).join("") + "</ul></details>" : "")
+            + '<p class="meta">Package: <code>' + esc(a.id) + "</code></p>"
+            + "</div></article>";
+        }).join("") || "<p>No apps match your search.</p>";
+        countEl.textContent = shown.length === apps.length
+          ? apps.length + (apps.length === 1 ? " app" : " apps")
+          : shown.length + " of " + apps.length + (apps.length === 1 ? " app" : " apps");
+      }
+
+      qEl.addEventListener("input", function () { render(qEl.value); });
+      render("");
+    })
+    .catch(function (e) {
+      appsEl.innerHTML = "<p>Could not load the app index (" + esc(e.message)
+        + '). You can still add the repository in F-Droid or browse the '
+        + '<a href="' + REPO + '/">repository files</a> directly.</p>';
+      countEl.textContent = "";
+    });
+})();
+</script>
+</body>
+</html>
