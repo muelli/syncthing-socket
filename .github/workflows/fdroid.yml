@@ -62,6 +62,7 @@ jobs:
           # Ensure repo dir exists and copy downloaded APKs
           mkdir -p repo
           cp -r ../repo/*.apk repo/ 2>/dev/null || echo "No APKs found to copy."
+          cp ../assets/logo.png icon.png 2>/dev/null || echo "Logo not found."
           
           # Run fdroid update to scan APKs and generate index
           fdroid update -c
