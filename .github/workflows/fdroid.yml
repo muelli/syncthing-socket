@@ -46,7 +46,7 @@ jobs:
         run: |
           cd fdroid
           cat <<EOF > config.yml
-          repo_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo
+          repo_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/repo
           repo_name: Syncthing LUKS F-Droid Repository
           repo_icon: icon.png
           repo_description: Official F-Droid repository for the Syncthing LUKS Unlocker app.
@@ -66,7 +66,7 @@ jobs:
           # Compute the repo fingerprint for the landing page / add-repo link.
           FP="$(keytool -list -v -keystore keystore.p12 -storepass syncthing -alias fdroid \
                 | awk -F': ' '/SHA256:/{gsub(/:/,"",$2); print tolower($2); exit}')"
-          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/repo"
           ADD_URL="${REPO_URL}?fingerprint=${FP}"
           touch .nojekyll
 
