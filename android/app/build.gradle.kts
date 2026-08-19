@@ -134,8 +134,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:${camerax_version}")
     implementation("androidx.camera:camera-view:${camerax_version}")
 
-    // Barcode scanning (ML Kit)
-    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    // Barcode scanning (FLOSS ZXing)
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

@@ -27,8 +27,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import org.json.JSONObject
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -221,24 +223,33 @@ fun QRScannerScreen(onQRCodeScanned: (String) -> Unit, onCancel: () -> Unit) {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-                    val scanner = BarcodeScanning.getClient()
+                    val reader = MultiFormatReader()
                     imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                            scanner.process(image)
-                                .addOnSuccessListener { barcodes ->
-                                    for (barcode in barcodes) {
-                                        barcode.rawValue?.let {
-                                            if (it.contains("laptop_device_id")) {
-                                                onQRCodeScanned(it)
-                                                imageProxy.close()
-                                                return@addOnSuccessListener
-                                            }
-                                        }
-                                    }
-                                }
-                                .addOnCompleteListener { imageProxy.close() }
+                        val yBuffer = imageProxy.planes[0].buffer
+                        val ySize = yBuffer.remaining()
+                        val yArray = ByteArray(ySize)
+                        yBuffer.get(yArray)
+                        
+                        val source = PlanarYUVLuminanceSource(
+                            yArray,
+                            imageProxy.width,
+                            imageProxy.height,
+                            0, 0,
+                            imageProxy.width,
+                            imageProxy.height,
+                            false
+                        )
+                        val binaryBitmap = BinaryBitmap(HybridBinarizer(source))
+                        
+                        try {
+                            val result = reader.decode(binaryBitmap)
+                            if (result.text.contains("laptop_device_id")) {
+                                onQRCodeScanned(result.text)
+                            }
+                        } catch (e: Exception) {
+                            // barcode not found
+                        } finally {
+                            imageProxy.close()
                         }
                     }
 
