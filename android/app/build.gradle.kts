@@ -13,9 +13,18 @@ android {
         applicationId = "com.github.muelli.syncthingsocket"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-
+        
+        val gitVersionCount = providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+        }.standardOutput.asText.get().trim()
+        
+        val gitVersionName = providers.exec {
+            commandLine("sh", "../../scripts/version.sh")
+        }.standardOutput.asText.get().trim()
+        
+        versionCode = gitVersionCount.toIntOrNull() ?: 1
+        versionName = gitVersionName
+        
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
