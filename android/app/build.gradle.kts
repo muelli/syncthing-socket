@@ -14,13 +14,19 @@ android {
         minSdk = 26
         targetSdk = 34
         
-        val gitVersionCount = providers.exec {
-            commandLine("git", "rev-list", "--count", "HEAD")
-        }.standardOutput.asText.get().trim()
+        val gitVersionCount = try {
+            providers.exec {
+                commandLine("git", "rev-list", "--count", "HEAD")
+                isIgnoreExitValue = true
+            }.standardOutput.asText.get().trim()
+        } catch (e: Exception) { "1" }
         
-        val gitVersionName = providers.exec {
-            commandLine("sh", "../../scripts/version.sh")
-        }.standardOutput.asText.get().trim()
+        val gitVersionName = try {
+            providers.exec {
+                commandLine("sh", "../../scripts/version.sh")
+                isIgnoreExitValue = true
+            }.standardOutput.asText.get().trim()
+        } catch (e: Exception) { "unknown" }
         
         versionCode = gitVersionCount.toIntOrNull() ?: 1
         versionName = gitVersionName
