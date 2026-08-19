@@ -51,6 +51,7 @@ jobs:
           repo_icon: icon.png
           repo_description: Official F-Droid repository for the Syncthing LUKS Unlocker app.
           keystore: keystore.p12
+          repo_keyalias: fdroid
           keystorepass: syncthing
           keypass: syncthing
           keydname: "CN=Syncthing LUKS fdroid, O=Syncthing LUKS"
