@@ -173,6 +173,14 @@ jobs:
             rm keystore.jks app-release-unsigned.apk app-release-aligned.apk
           fi
 
+      - name: Verify F-Droid Freedom
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip install --break-system-packages fdroidserver
+          cd android/app/build/outputs/apk/release
+          fdroid scanner --exit-code syncthing-socket.apk
+
       - name: Generate Android SBOM
         uses: anchore/sbom-action@v0
         with:
