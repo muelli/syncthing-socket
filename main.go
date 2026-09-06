@@ -897,22 +897,43 @@ func RunClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		return fmt.Errorf("no connectable relay or TCP addresses found")
 	}
 
-	relayURI := relayAddresses[0]
-	u, err := url.Parse(relayURI)
-	if err != nil {
-		return fmt.Errorf("invalid relay URI: %w", err)
-	}
+	// Global discovery keeps returning announcements for a while after a server has moved
+	// to another relay, so the newest address is not necessarily the first one. Trying only
+	// relayAddresses[0] means one stale entry fails every attempt. During a LUKS unlock
+	// that is an unbootable machine retrying against a dead relay until the cache expires.
+	var conn net.Conn
+	var lastErr error
+	for _, relayURI := range relayAddresses {
+		u, err := url.Parse(relayURI)
+		if err != nil {
+			lastErr = fmt.Errorf("invalid relay URI %q: %w", relayURI, err)
+			slog.Debug("Skipping unparsable relay URI", "relay", relayURI, "error", err)
+			continue
+		}
 
-	slog.Info("Requesting session invitation from relay", "relay", u.String(), "serverID", serverID.String())
-	invitation, err := client.GetInvitationFromRelay(ctx, u, serverID, []tls.Certificate{cert}, 15*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to get invitation from relay: %w", err)
-	}
+		slog.Info("Requesting session invitation from relay", "relay", u.String(), "serverID", serverID.String())
+		invitation, err := client.GetInvitationFromRelay(ctx, u, serverID, []tls.Certificate{cert}, 15*time.Second)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to get invitation from relay %s: %w", u.Host, err)
+			slog.Info("Relay did not offer a session, trying the next address", "relay", u.Host, "error", err)
+			continue
+		}
 
-	slog.Info("Joining relay session")
-	conn, err := client.JoinSession(ctx, invitation)
-	if err != nil {
-		return fmt.Errorf("failed to join session: %w", err)
+		slog.Info("Joining relay session")
+		conn, err = client.JoinSession(ctx, invitation)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to join session on relay %s: %w", u.Host, err)
+			slog.Info("Could not join relay session, trying the next address", "relay", u.Host, "error", err)
+			conn = nil
+			continue
+		}
+		break
+	}
+	if conn == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no relay addresses to try")
+		}
+		return lastErr
 	}
 	defer conn.Close()
 
