@@ -209,5 +209,23 @@ syncthing-socket client \-\-passphrase my-secret \-\-reverse-forward 127.0.0.1:8
 .br
 .I (Or forward to a UNIX socket: \-\-reverse-forward /var/run/docker.sock)
 .RE
+.PP
+.B 8. Unlocking a LUKS Root Volume at Boot
+.br
+A machine with an encrypted root filesystem that cannot accept inbound connections dials
+out from its initramfs and receives the passphrase from you. A cryptsetup keyscript runs
+the client; whatever it prints becomes the LUKS key.
+.RS
+.B Key holder (your laptop), when you want the machine to boot:
+.br
+printf %s 'your\-luks\-passphrase' | syncthing-socket server \-\-passphrase my-secret
+.br
+.B Booting machine (from /lib/cryptsetup/scripts/syncthing-socket-keyscript):
+.br
+syncthing-socket client \-\-passphrase my-secret < /dev/null
+.br
+.I The server consumes stdin once and exits after the transfer, so each unlock needs a
+.I fresh invocation. See contrib/initramfs-luks/README.md for the full setup.
+.RE
 .SH AUTHORS
 Written by the syncthing-socket contributors.

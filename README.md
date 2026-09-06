@@ -14,6 +14,7 @@ A netcat-like client/server utility that allows two endpoints to communicate bi-
 - **Remote Command Execution:** Execute an arbitrary command for each connection and pipe its input/output over the tunnel (`--command`).
 - **SOCKS5 Proxy:** Built-in multiplexed remote SOCKS proxy (`-socks`).
 - **Netcat-style:** Pipes standard input (`stdin`) and standard output (`stdout`) bi-directionally between endpoints.
+- **Remote LUKS Unlock:** Unlock an encrypted root filesystem during early boot on a machine that cannot accept inbound connections, by piping the passphrase to it on demand. See [Unlocking an Encrypted Disk at Boot](#unlocking-an-encrypted-disk-at-boot).
 
 ---
 
@@ -151,6 +152,39 @@ $ ./syncthing-socket id --passphrase "my-secret"
 Server ID: DJOJMPR-MCPBCMH-GVVOJEX-HXWI7JU-L7OSTDV-TBD4ZJP-YSOFXQZ-PPFV5QD
 Client ID: F34H6S5-62G6AIP-2G3VHTB-I5D35S6-6T4K5E6-RFL52E4-37C5T3S-7FLHFAQ
 ```
+
+---
+
+## Unlocking an Encrypted Disk at Boot
+
+The flagship use case. A server or VM with an encrypted root filesystem needs its LUKS
+passphrase before it can finish booting. But if it cannot accept inbound connections, you
+cannot SSH in to provide one. `syncthing-socket` inverts the direction: **the booting
+machine dials out** and you hand it the passphrase from your laptop.
+
+- On the booting machine, a cryptsetup keyscript runs `syncthing-socket client` from inside
+  the initramfs. Whatever it prints becomes the LUKS key.
+- On your laptop, you pipe the passphrase into `syncthing-socket server` when you want the
+  machine to come up.
+
+```bash
+# Laptop, when you want the machine to boot:
+printf %s 'your-luks-passphrase' | syncthing-socket server --passphrase "your-key-seed"
+```
+
+Like Clevis, it hooks the initramfs without replacing cryptsetup's passphrase prompt, so
+console entry, `cryptroot-unlock`, Clevis/Tang and TPM agents all keep working. Whichever
+key arrives first wins, and `/etc/crypttab` needs no changes.
+
+Debian/Ubuntu packages install the pieces:
+
+```bash
+sudo apt install ./syncthing-socket_*.deb ./syncthing-socket-luks-initramfs_*.deb
+```
+
+The full recipe (requirements, pairing modes and their threat models, `/etc/crypttab`
+wiring, fallbacks and gotchas) is in
+**[contrib/initramfs-luks/README.md](contrib/initramfs-luks/README.md)**.
 
 ---
 
