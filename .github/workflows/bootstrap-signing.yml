@@ -1,0 +1,81 @@
+name: Bootstrap signing identity
+
+# Mints the certificate for one signing role and opens a pull request adding it to
+# signing/. Run once per role, ever.
+#
+# The key is derived inside the job from MASTER_SECRET, so the seed never leaves the
+# repository secret store and no private key is ever written to the repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      role:
+        description: 'Signing role to bootstrap'
+        required: true
+        type: choice
+        options: [app, fdroid]
+      confirm_rotation:
+        description: 'Replace an existing certificate (identity reset, breaks every install)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bootstrap:
+    name: Bootstrap ${{ inputs.role }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Refuse to silently rotate
+        run: |
+          if [ -f "signing/${{ inputs.role }}-cert.pem" ] && [ "${{ inputs.confirm_rotation }}" != "true" ]; then
+            echo "signing/${{ inputs.role }}-cert.pem already exists." >&2
+            echo "Re-bootstrapping mints a different certificate, which is an identity reset:" >&2
+            echo "every user must uninstall the app and remove and re-add the repository." >&2
+            echo "Re-run with confirm_rotation if that is genuinely what you want." >&2
+            exit 1
+          fi
+
+      - name: Mint the certificate
+        env:
+          MASTER_SECRET: ${{ secrets.MASTER_SECRET }}
+        run: |
+          if [ -z "$MASTER_SECRET" ]; then
+            echo "MASTER_SECRET is not set; there is nothing to derive from." >&2
+            exit 1
+          fi
+          go run scripts/generate_keystore.go -bootstrap "$MASTER_SECRET" "${{ inputs.role }}" >/dev/null
+          # The private key is a build artefact of this job and must not be committed.
+          rm -f "key_${{ inputs.role }}.pem" "cert_${{ inputs.role }}.pem"
+          openssl x509 -in "signing/${{ inputs.role }}-cert.pem" -noout -subject -dates -fingerprint -sha256
+
+      - name: Open a pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          add-paths: signing/${{ inputs.role }}-cert.pem
+          branch: bootstrap-signing-${{ inputs.role }}
+          commit-message: |
+            signing: pin the ${{ inputs.role }} certificate
+
+            Minted once from MASTER_SECRET. This certificate is the identity for this
+            role: Android compares certificate bytes to authorise an update, and an
+            F-Droid repository fingerprint is the SHA-256 of the index-signing
+            certificate. It cannot be re-derived, so it is pinned here and
+            scripts/generate_keystore.go verifies the seed against it before signing.
+          title: 'signing: pin the ${{ inputs.role }} certificate'
+          body: |
+            Minted by the `Bootstrap signing identity` workflow from `MASTER_SECRET`.
+
+            Only the public certificate is added; the private key stays derivable from the
+            seed and was deleted with the job.
+
+            Check the fingerprint in the job log against the file before merging.
