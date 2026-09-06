@@ -1,0 +1,27 @@
+#!/bin/sh
+# initramfs local-bottom script: stop the syncthing-socket unlock loop once the root
+# filesystem is open, so nothing is left holding the network or a console when the real
+# system takes over.
+#
+# INSTALLATION: /etc/initramfs-tools/scripts/local-bottom/syncthing-socket, mode 0755.
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+[ -s /run/syncthing-socket-luks.pid ] || exit 0
+pid=$(cat /run/syncthing-socket-luks.pid)
+
+# Kill the loop's children too: it may be blocked in `sleep` or mid-connection, and an
+# orphan holding a console or socket outlives the initramfs.
+children=$(ps -o pid,ppid 2>/dev/null | awk -v p="$pid" 'NR>1 && $2 == p { print $1 }')
+for victim in $pid $children; do
+	kill "$victim" 2>/dev/null
+done
+
+rm -f /run/syncthing-socket-luks.pid

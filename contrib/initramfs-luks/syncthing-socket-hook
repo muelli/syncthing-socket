@@ -1,15 +1,55 @@
 #!/bin/sh
-PREREQ=""
+# initramfs-tools hook: put syncthing-socket and the CA bundle into the initramfs.
+# INSTALLATION: /etc/initramfs-tools/hooks/syncthing-socket, mode 0755.
+
+PREREQ="cryptroot"
 prereqs() { echo "$PREREQ"; }
-case $1 in prereqs) prereqs; exit 0 ;; esac
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
 . /usr/share/initramfs-tools/hook-functions
 
-# Edit this to point to where you installed syncthing-socket on the server
-SYNCTHING_SOCKET_BIN="/usr/local/bin/syncthing-socket"
+# Packaged installs land in /usr/bin, manual ones usually in /usr/local/bin. Override with
+# SYNCTHING_SOCKET_BIN if yours is somewhere else.
+if [ -z "${SYNCTHING_SOCKET_BIN:-}" ]; then
+	for candidate in /usr/local/bin/syncthing-socket /usr/bin/syncthing-socket; do
+		if [ -x "$candidate" ]; then
+			SYNCTHING_SOCKET_BIN="$candidate"
+			break
+		fi
+	done
+fi
 
-# Copy binary
+if [ -z "${SYNCTHING_SOCKET_BIN:-}" ] || [ ! -x "$SYNCTHING_SOCKET_BIN" ]; then
+	echo "W: syncthing-socket: binary not found in /usr/local/bin or /usr/bin, skipping." >&2
+	echo "W: syncthing-socket: remote LUKS unlock will NOT be available." >&2
+	exit 0
+fi
+
+# copy_exec resolves usrmerge, so this lands at /usr/bin and /bin/syncthing-socket
+# resolves to it inside the initramfs.
 copy_exec "$SYNCTHING_SOCKET_BIN" /bin/
 
-# Copy CA certificates for HTTPS discovery
-mkdir -p $DESTDIR/etc/ssl/certs
-cp -a /etc/ssl/certs/ca-certificates.crt $DESTDIR/etc/ssl/certs/
+# The unlock configuration, when it is not stored in the LUKS2 header. Mode 0600 in the
+# initramfs is cosmetic, since an unencrypted /boot is readable by anyone with the disk,
+# but it keeps the seed out of casual view on the running system.
+if [ -r /etc/syncthing-socket/luks.conf ]; then
+	mkdir -p "$DESTDIR/etc/syncthing-socket"
+	cp -a /etc/syncthing-socket/luks.conf "$DESTDIR/etc/syncthing-socket/luks.conf"
+	chmod 0600 "$DESTDIR/etc/syncthing-socket/luks.conf"
+fi
+
+# Syncthing's discovery and relay pools are reached over HTTPS, so the initramfs needs a
+# trust store. Without it every lookup fails with a certificate error and the unlock
+# silently retries forever.
+if [ -r /etc/ssl/certs/ca-certificates.crt ]; then
+	mkdir -p "$DESTDIR/etc/ssl/certs"
+	cp -a /etc/ssl/certs/ca-certificates.crt "$DESTDIR/etc/ssl/certs/"
+else
+	echo "W: syncthing-socket: /etc/ssl/certs/ca-certificates.crt missing;" >&2
+	echo "W: install the ca-certificates package or discovery will fail." >&2
+fi

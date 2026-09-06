@@ -1,26 +1,60 @@
-#!/bin/bash
-DEVICE=$1
-P2P_KEY_SEED=$2
-KEY_BEARING_DEVICE_ID=$3
+#!/bin/sh
+# Store the syncthing-socket unlock configuration in a LUKS2 header token, so the
+# keyscript picks it up without being edited.
+#
+# SECURITY: the seed is written to the header in cleartext. Anyone who can read the header
+# can derive the booting machine's client identity and ask your key holder for the
+# passphrase. That is no worse than hardcoding the seed in the keyscript (which also lives
+# in an unencrypted initramfs), but it is not a secret store.
 
-if [ -z "$KEY_BEARING_DEVICE_ID" ]; then
-    echo "Usage: syncthing-luks-bind <device> <p2p_key_seed> <key_bearing_device_id>"
-    exit 1
+set -eu
+
+DEVICE=${1:-}
+P2P_KEY_SEED=${2:-}
+KEY_BEARING_DEVICE_ID=${3:-}
+UNLOCK_ROLE=${4:-client}
+
+if [ -z "$DEVICE" ] || [ -z "$P2P_KEY_SEED" ]; then
+	cat >&2 <<USAGE
+Usage: syncthing-luks-bind <device> <p2p_key_seed> [key_bearing_device_id] [role]
+
+  device                 LUKS2 device, e.g. /dev/nvme0n1p3
+  p2p_key_seed           shared secret both ends derive their identities from
+  key_bearing_device_id  optional: pin the key holder's Syncthing Device ID instead of
+                         deriving it from the seed (recommended; see the README)
+  role                   which side dials out, "client" (default) or "server":
+                           client  this machine connects to a waiting key holder,
+                                   e.g. a laptop running "syncthing-socket server"
+                           server  this machine announces and waits for the key holder
+                                   to connect. Use this for the Android app, which
+                                   pushes the passphrase when you tap unlock.
+USAGE
+	exit 1
 fi
 
-# Create a secure temporary file
-TMPJSON=$(mktemp)
+case "$UNLOCK_ROLE" in
+client | server) ;;
+*)
+	echo "Error: role must be \"client\" or \"server\", not \"$UNLOCK_ROLE\"." >&2
+	exit 1
+	;;
+esac
 
-cat <<EOF > "$TMPJSON"
-{
-  "type":"syncthing-socket",
-  "keyslots":["0"],
-  "p2p_key_seed":"$P2P_KEY_SEED",
-  "key_bearing_device_id":"$KEY_BEARING_DEVICE_ID"
-}
-EOF
+if ! cryptsetup isLuks --type luks2 "$DEVICE"; then
+	echo "Error: $DEVICE is not a LUKS2 device (tokens need LUKS2)." >&2
+	exit 1
+fi
+
+TMPJSON=$(mktemp)
+trap 'rm -f "$TMPJSON"' EXIT
+chmod 600 "$TMPJSON"
+
+cat > "$TMPJSON" <<JSON
+{"type":"syncthing-socket","keyslots":["0"],"p2p_key_seed":"$P2P_KEY_SEED","key_bearing_device_id":"$KEY_BEARING_DEVICE_ID","unlock_role":"$UNLOCK_ROLE"}
+JSON
 
 echo "Injecting syncthing-socket metadata into $DEVICE..."
-cryptsetup token add --json "$TMPJSON" "$DEVICE"
-rm -f "$TMPJSON"
-echo "Success!"
+# `token import` is the verb for custom JSON. `token add` is for keyring tokens and does
+# not accept --json at all.
+cryptsetup token import --json-file="$TMPJSON" "$DEVICE"
+echo "Success. Verify with: cryptsetup token export --token-id <n> $DEVICE"

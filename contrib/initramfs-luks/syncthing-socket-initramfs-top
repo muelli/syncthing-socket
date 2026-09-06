@@ -1,0 +1,183 @@
+#!/bin/sh
+# initramfs local-top script: fetch a LUKS passphrase over the Syncthing relay network.
+#
+# INSTALLATION: /etc/initramfs-tools/scripts/local-top/syncthing-socket, mode 0755.
+#
+# This deliberately does NOT use a cryptsetup `keyscript=`. A keyscript *replaces*
+# cryptsetup's own askpass, which breaks both manual passphrase entry and
+# `cryptroot-unlock`. Instead, following what Clevis does, we leave the normal unlock
+# path alone and race it: find the running askpass, borrow the same
+# /lib/cryptsetup/passfifo it is reading from, and write the passphrase into it. Manual
+# entry, cryptroot-unlock, Clevis and TPM agents all keep working; whoever answers first
+# wins, and nothing is lost if we never answer at all.
+
+# Deliberately NO prereqs. Declaring "cryptroot" would order this script *after* the one
+# that blocks waiting for the passphrase, so the loop would never start; a deadlock.
+# We must already be running and polling while cryptroot's askpass waits.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+SYNCTHING_SOCKET_BIN=/bin/syncthing-socket
+[ -x "$SYNCTHING_SOCKET_BIN" ] || exit 0
+
+# /scripts/functions references $quiet, which init normally sets; default it so the script
+# is also runnable by hand from a dropbear shell when debugging.
+: "${quiet:=n}"
+. /scripts/functions
+
+# Returns the path of the passfifo this pid has open, if any.
+get_fifo_path() {
+	for fd in /proc/"$1"/fd/*; do
+		[ -e "$fd" ] || continue
+		target=$(readlink -f "$fd" 2>/dev/null) || continue
+		case "$target" in
+		*/cryptsetup/passfifo) echo "$target" ; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+# Returns "<pid> <passfifo>" for an askpass that is currently waiting for a passphrase.
+get_askpass() {
+	ps | awk '/\/lib\/cryptsetup\/askpass/ && !/awk/ { print $1 }' | while read -r pid; do
+		fifo=$(get_fifo_path "$pid") || continue
+		echo "$pid $fifo"
+		break
+	done
+}
+
+# Read the unlock configuration: an explicit config file wins, otherwise the LUKS2 header
+# token written by syncthing-luks-bind.
+read_config() {
+	P2P_KEY_SEED=""
+	KEY_BEARING_DEVICE_ID=""
+	UNLOCK_ROLE="client"
+
+	if [ -r /etc/syncthing-socket/luks.conf ]; then
+		# shellcheck disable=SC1091
+		. /etc/syncthing-socket/luks.conf
+	fi
+	[ -n "$P2P_KEY_SEED" ] && return 0
+
+	[ -b "$1" ] || return 1
+	token_id=0
+	while [ "$token_id" -lt 32 ]; do
+		# `token export`; `token dump` does not exist. Output is single-line JSON.
+		token_json=$(cryptsetup token export --token-id "$token_id" "$1" 2>/dev/null)
+		case "$token_json" in
+		*'"type"'*'"syncthing-socket"'*)
+			P2P_KEY_SEED=$(printf %s "$token_json" |
+				sed -n 's/.*"p2p_key_seed"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+			KEY_BEARING_DEVICE_ID=$(printf %s "$token_json" |
+				sed -n 's/.*"key_bearing_device_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+			role=$(printf %s "$token_json" |
+				sed -n 's/.*"unlock_role"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+			[ -n "$role" ] && UNLOCK_ROLE="$role"
+			break
+			;;
+		esac
+		token_id=$((token_id + 1))
+	done
+
+	[ -n "$P2P_KEY_SEED" ]
+}
+
+# configure_networking() does not populate /etc/resolv.conf, and without a resolver every
+# discovery lookup fails instantly on [::1]:53.
+setup_networking() {
+	configure_networking || return 1
+	[ -e /etc/resolv.conf ] && return 0
+	: > /etc/resolv.conf
+	for intf in /run/net-*.conf; do
+		[ -e "$intf" ] || continue
+		# shellcheck disable=SC1090
+		. "$intf"
+		for ns in "$IPV4DNS0" "$IPV4DNS1" "$IPV6DNS0"; do
+			case "$ns" in
+			"" | 0.0.0.0) continue ;;
+			esac
+			echo "nameserver $ns" >> /etc/resolv.conf
+		done
+	done
+}
+
+unlock_loop() {
+	PATH="/sbin:/usr/sbin:/bin:/usr/bin"
+	networking_done=0
+	last_source=""
+
+	while true; do
+		# Wait for an askpass to be waiting on a passfifo.
+		pid=""
+		fifo=""
+		until [ -n "$pid" ] && [ -p "$fifo" ]; do
+			sleep 1
+			askpass=$(get_askpass)
+			pid=${askpass%% *}
+			fifo=${askpass#* }
+			[ "$pid" = "$fifo" ] && { pid=""; fifo=""; }
+		done
+
+		# Which device is being asked for? askpass inherits it in its environment.
+		source=$(tr '\0' '\n' < /proc/"$pid"/environ 2>/dev/null |
+			sed -n 's/^CRYPTTAB_SOURCE=//p')
+		[ -n "$source" ] || { sleep 2; continue; }
+		[ "$source" = "$last_source" ] && { sleep 2; continue; }
+
+		if ! read_config "$source"; then
+			# Nothing configured for this device; leave it to askpass entirely.
+			last_source="$source"
+			continue
+		fi
+
+		if [ "$networking_done" -eq 0 ]; then
+			setup_networking
+			networking_done=1
+		fi
+
+		echo "syncthing-socket: requesting the passphrase for $source" > /dev/console
+		# stdin is /dev/null in both roles: this machine only ever receives. The binary
+		# keeps stdout for the payload alone, so $(...) captures exactly the passphrase.
+		if [ "$UNLOCK_ROLE" = "server" ]; then
+			# Announce and wait for the key holder to connect and push the passphrase.
+			# Here KEY_BEARING_DEVICE_ID is who we accept rather than who we dial; in
+			# both roles it names the same thing, the device holding the passphrase.
+			if [ -n "$KEY_BEARING_DEVICE_ID" ]; then
+				KEY=$("$SYNCTHING_SOCKET_BIN" server --passphrase "$P2P_KEY_SEED" \
+					--authorized-clients "$KEY_BEARING_DEVICE_ID" \
+					--log-level error < /dev/null 2>/dev/console)
+			else
+				KEY=$("$SYNCTHING_SOCKET_BIN" server --passphrase "$P2P_KEY_SEED" \
+					--log-level error < /dev/null 2>/dev/console)
+			fi
+		elif [ -n "$KEY_BEARING_DEVICE_ID" ]; then
+			KEY=$("$SYNCTHING_SOCKET_BIN" client --passphrase "$P2P_KEY_SEED" \
+				--log-level error "$KEY_BEARING_DEVICE_ID" < /dev/null 2>/dev/console)
+		else
+			KEY=$("$SYNCTHING_SOCKET_BIN" client --passphrase "$P2P_KEY_SEED" \
+				--log-level error < /dev/null 2>/dev/console)
+		fi
+
+		if [ -n "$KEY" ]; then
+			printf %s "$KEY" > "$fifo"
+			echo "syncthing-socket: passphrase delivered for $source" > /dev/console
+			last_source="$source"
+			# Give cryptsetup time to consume it and move on to the next device.
+			sleep 2
+		else
+			# The key holder is usually just not listening yet. Retry; a fresh
+			# announcement takes ~30-45s to reach global discovery.
+			echo "syncthing-socket: no passphrase yet, retrying" > /dev/console
+			sleep 5
+		fi
+	done
+}
+
+unlock_loop &
+echo $! > /run/syncthing-socket-luks.pid
