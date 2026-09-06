@@ -7,9 +7,9 @@ VERSION := `sh scripts/version.sh`
 PREFIX := "/usr/local"
 DESTDIR := ""
 
-# Build the project
+# Build the project. The root package is the `socket` library; the binary is in ./cmd.
 build:
-    {{GO}} build -ldflags "-X main.Version={{VERSION}}" -o syncthing-socket .
+    {{GO}} build -ldflags "-X syncthing-socket.Version={{VERSION}}" -o syncthing-socket ./cmd/syncthing-socket
 
 # Install the binary, man page, completions, and systemd service
 install: build
@@ -27,6 +27,15 @@ install: build
     sed -e "s|@PREFIX@|{{PREFIX}}|g" contrib/syncthing-socket.service.in > syncthing-socket.service
     install -Dm644 syncthing-socket.service {{DESTDIR}}{{PREFIX}}/lib/systemd/system/syncthing-socket.service
     rm syncthing-socket.service
+
+# Install the initramfs LUKS integration. Deliberately separate from `install`: it only
+# makes sense on Debian/Ubuntu with initramfs-tools, and it rewrites your boot path.
+install-contrib:
+    install -Dm755 contrib/initramfs-luks/syncthing-socket-hook {{DESTDIR}}/etc/initramfs-tools/hooks/syncthing-socket
+    install -Dm755 contrib/initramfs-luks/syncthing-socket-initramfs-top {{DESTDIR}}/etc/initramfs-tools/scripts/local-top/syncthing-socket
+    install -Dm755 contrib/initramfs-luks/syncthing-socket-initramfs-bottom {{DESTDIR}}/etc/initramfs-tools/scripts/local-bottom/syncthing-socket
+    install -Dm755 contrib/initramfs-luks/syncthing-luks-bind {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-bind
+    install -Dm755 contrib/initramfs-luks/syncthing-luks-setup {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-setup
 
 # Run the test suite
 test:
