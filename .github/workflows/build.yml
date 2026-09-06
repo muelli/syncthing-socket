@@ -171,7 +171,7 @@ jobs:
 
           # Verifies the seed against signing/app-cert.pem and fails if they disagree.
           # Prints only the derived keystore passphrase on stdout.
-          KS_PASS=$(cd "$REPO_ROOT" && go run scripts/generate_keystore.go "$MASTER_SECRET" app)
+          KS_PASS=$(cd "$REPO_ROOT" && go run ./scripts "$MASTER_SECRET" app)
           echo "::add-mask::$KS_PASS"
           mv "$REPO_ROOT"/key_app.pem "$REPO_ROOT"/cert_app.pem .
 

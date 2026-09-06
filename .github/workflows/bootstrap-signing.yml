@@ -13,7 +13,7 @@ on:
         description: 'Signing role to bootstrap'
         required: true
         type: choice
-        options: [app, fdroid]
+        options: [app, fdroid, debian]
       confirm_rotation:
         description: 'Replace an existing certificate (identity reset, breaks every install)'
         required: false
@@ -37,8 +37,16 @@ jobs:
 
       - name: Refuse to silently rotate
         run: |
-          if [ -f "signing/${{ inputs.role }}-cert.pem" ] && [ "${{ inputs.confirm_rotation }}" != "true" ]; then
-            echo "signing/${{ inputs.role }}-cert.pem already exists." >&2
+          # The debian role pins an armoured OpenPGP public key; the others pin an X.509
+          # certificate.
+          if [ "${{ inputs.role }}" = "debian" ]; then
+            PINNED="signing/debian-pub.asc"
+          else
+            PINNED="signing/${{ inputs.role }}-cert.pem"
+          fi
+          echo "PINNED=$PINNED" >> "$GITHUB_ENV"
+          if [ -f "$PINNED" ] && [ "${{ inputs.confirm_rotation }}" != "true" ]; then
+            echo "$PINNED already exists." >&2
             echo "Re-bootstrapping mints a different certificate, which is an identity reset:" >&2
             echo "every user must uninstall the app and remove and re-add the repository." >&2
             echo "Re-run with confirm_rotation if that is genuinely what you want." >&2
@@ -53,15 +61,19 @@ jobs:
             echo "MASTER_SECRET is not set; there is nothing to derive from." >&2
             exit 1
           fi
-          go run scripts/generate_keystore.go -bootstrap "$MASTER_SECRET" "${{ inputs.role }}" >/dev/null
-          # The private key is a build artefact of this job and must not be committed.
-          rm -f "key_${{ inputs.role }}.pem" "cert_${{ inputs.role }}.pem"
-          openssl x509 -in "signing/${{ inputs.role }}-cert.pem" -noout -subject -dates -fingerprint -sha256
+          go run ./scripts -bootstrap "$MASTER_SECRET" "${{ inputs.role }}" >/dev/null
+          # Private key material is an artefact of this job and must never be committed.
+          rm -f key_*.pem cert_*.pem secret_*.asc pub_*.asc
+          if [ "${{ inputs.role }}" = "debian" ]; then
+            gpg --show-keys --with-fingerprint "$PINNED"
+          else
+            openssl x509 -in "$PINNED" -noout -subject -dates -fingerprint -sha256
+          fi
 
       - name: Open a pull request
         uses: peter-evans/create-pull-request@v6
         with:
-          add-paths: signing/${{ inputs.role }}-cert.pem
+          add-paths: signing/
           branch: bootstrap-signing-${{ inputs.role }}
           commit-message: |
             signing: pin the ${{ inputs.role }} certificate

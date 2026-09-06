@@ -9,6 +9,7 @@ trusted.
 | --- | --- | --- |
 | `app-cert.pem` | `app` | signing the Android APK |
 | `fdroid-cert.pem` | `fdroid` | signing the F-Droid repository index |
+| `debian-pub.asc` | `debian` | signing the APT repository's `Release` file |
 
 ## Why these are committed
 
@@ -26,6 +27,19 @@ then refuses to sign if the seed does not reproduce the pinned public key.
 
 Before this existed, every CI run minted a fresh certificate from the same key, so each
 release was a different signer and each repository publish a different fingerprint.
+
+## The `debian` role is different
+
+It is an Ed25519 OpenPGP key, and it *is* fully reproducible from the seed: an OpenPGP v4
+fingerprint covers only the public key packet, so pinning the creation time makes it a pure
+function of the derived key, and Ed25519 signatures are deterministic by construction, so
+even the user-ID self-signature comes out byte-identical. Nothing about this key is stored
+anywhere; CI re-derives it, signs, and throws it away.
+
+`debian-pub.asc` is still committed and still checked, because a mismatch means the wrong
+seed and should stop a release rather than quietly publish packages signed by a key no
+apt client trusts. It is also what users install into
+`/etc/apt/keyrings/syncthing-socket.gpg`.
 
 ## Bootstrapping a role
 

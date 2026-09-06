@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
           mkdir -p fdroid
-          KS_PASS=$(go run scripts/generate_keystore.go "$MASTER_SECRET" fdroid)
+          KS_PASS=$(go run ./scripts "$MASTER_SECRET" fdroid)
           echo "::add-mask::$KS_PASS"
           echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
           openssl pkcs12 -export -out fdroid/keystore.p12 -inkey key_fdroid.pem -in cert_fdroid.pem \

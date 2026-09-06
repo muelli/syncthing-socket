@@ -28,6 +28,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
@@ -41,6 +42,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/hkdf"
@@ -160,6 +162,13 @@ func main() {
 			"  publish artefacts nobody can reproduce or upgrade across.")
 	}
 
+	// The debian role signs an APT Release file, so it is an OpenPGP key rather than an
+	// X.509 certificate. It is genuinely reproducible from the seed; see openpgp_key.go.
+	if role == "debian" {
+		runOpenPGP(seed, role, bootstrap)
+		return
+	}
+
 	priv, err := deriveECKey(seed, role)
 	if err != nil {
 		fail("deriving the %s key: %v", role, err)
@@ -225,4 +234,60 @@ func main() {
 
 	sum := sha256.Sum256(certDER)
 	fmt.Fprintf(os.Stderr, "%s certificate sha256: %x\n", role, sum)
+}
+
+// runOpenPGP emits the transferable secret key for gpg to import, and either pins or
+// verifies the public key.
+func runOpenPGP(seed, role string, bootstrap bool) {
+	priv, err := deriveEd25519Key(seed, role)
+	if err != nil {
+		fail("deriving the %s key: %v", role, err)
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+
+	var pubArmor strings.Builder
+	if err := armor(&pubArmor, "PGP PUBLIC KEY BLOCK", transferablePublicKey(priv)); err != nil {
+		fail("armouring the %s public key: %v", role, err)
+	}
+	pinned := filepath.Join("signing", role+"-pub.asc")
+
+	if bootstrap {
+		if err := os.MkdirAll("signing", 0o755); err != nil {
+			fail("creating signing/: %v", err)
+		}
+		if err := os.WriteFile(pinned, []byte(pubArmor.String()), 0o644); err != nil {
+			fail("writing %s: %v", pinned, err)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %s; commit it\n", pinned)
+	} else {
+		want, err := os.ReadFile(pinned)
+		if err != nil {
+			fail("reading the pinned public key %s: %v\n"+
+				"  Run with -bootstrap once to create it, then commit it.", pinned, err)
+		}
+		if strings.TrimSpace(string(want)) != strings.TrimSpace(pubArmor.String()) {
+			fail("the seed does not reproduce the committed public key %s.\n"+
+				"  Either MASTER_SECRET is wrong, or the key belongs to a different seed.\n"+
+				"  Signing packages with an unknown key would strand every apt client.", pinned)
+		}
+	}
+
+	secPath := "secret_" + role + ".asc"
+	f, err := os.OpenFile(secPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		fail("writing %s: %v", secPath, err)
+	}
+	if err := armor(f, "PGP PRIVATE KEY BLOCK", transferableSecretKey(priv)); err != nil {
+		f.Close()
+		fail("armouring the %s secret key: %v", role, err)
+	}
+	f.Close()
+	if err := os.WriteFile("pub_"+role+".asc", []byte(pubArmor.String()), 0o644); err != nil {
+		fail("writing pub_%s.asc: %v", role, err)
+	}
+
+	// Nothing secret on stdout: this role has no keystore passphrase, and the fingerprint
+	// is what the workflow and the docs need.
+	fmt.Printf("%X\n", fingerprint(pub))
+	fmt.Fprintf(os.Stderr, "%s OpenPGP fingerprint: %X\n", role, fingerprint(pub))
 }
