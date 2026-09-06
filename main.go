@@ -65,6 +65,20 @@ func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 var Version = "dev"
 
+// DefaultDiscoveryURL is the Syncthing global discovery endpoint used to resolve a peer's
+// Device ID to its current addresses. Exported so that other entry points into this
+// package, the gomobile bridge in particular, use the same default as the CLI instead of
+// passing an empty string, which produces a relative URL and fails every lookup.
+const DefaultDiscoveryURL = "https://discovery-lookup.syncthing.net/v2/"
+
+// Certificate seed suffixes. The two ends of a connection derive different identities from
+// the same passphrase so that a peer cannot be reflected back onto itself; every derivation
+// must go through one of these.
+const (
+	CertSuffixServer = "server"
+	CertSuffixClient = "client"
+)
+
 func isTraceEnabled() bool {
 	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
 }
@@ -158,7 +172,7 @@ func Execute() {
 			var cert tls.Certificate
 			var err error
 			if serverPassphrase != "" {
-				cert, err = GenerateDeterministicCert(serverPassphrase + "server")
+				cert, err = GenerateDeterministicCert(serverPassphrase + CertSuffixServer)
 			} else if serverCert != "" && serverKey != "" {
 				cert, err = loadOrGenerateCert(serverCert, serverKey)
 			} else if serverCert == "" && serverKey == "" {
@@ -290,19 +304,24 @@ func Execute() {
 			}
 
 			if clientPassphrase != "" {
-				serverCertStruct, _ := GenerateDeterministicCert(clientPassphrase + "server")
+				serverCertStruct, _ := GenerateDeterministicCert(clientPassphrase + CertSuffixServer)
 				derivedID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0]).String()
 				if serverID == "" {
 					serverID = derivedID
 				} else if serverID != derivedID {
-					slog.Warn("Provided Server ID does not match the passphrase-derived Server ID", "provided", serverID, "derived", derivedID)
+					// Not a mistake: naming a peer explicitly while deriving our own
+					// identity from the passphrase is the asymmetric setup, where the key
+					// holder has its own independent identity and only the peer's public
+					// Device ID is pinned on the booting machine. That is the recommended
+					// LUKS configuration, so it must not warn on every boot.
+					slog.Debug("Using the explicitly provided Server ID rather than the passphrase-derived one", "provided", serverID, "derived", derivedID)
 				}
 			}
 
 			var cert tls.Certificate
 			var err error
 			if clientPassphrase != "" {
-				cert, err = GenerateDeterministicCert(clientPassphrase + "client")
+				cert, err = GenerateDeterministicCert(clientPassphrase + CertSuffixClient)
 			} else if clientCert != "" && clientKey != "" {
 				cert, err = loadOrGenerateCert(clientCert, clientKey)
 			} else if clientCert == "" && clientKey == "" {
@@ -332,7 +351,7 @@ func Execute() {
 	clientCmd.Flags().BoolVar(&clientShell, "shell", false, "Start an interactive PTY shell client")
 	clientCmd.Flags().StringVar(&clientReverseForward, "reverse-forward", "", "Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80)")
 	clientCmd.Flags().StringVar(&clientRelay, "relay", "", "Relay URI (if specified, bypasses discovery lookup)")
-	clientCmd.Flags().StringVar(&clientDiscovery, "discovery", "https://discovery-lookup.syncthing.net/v2/", "Discovery lookup URL")
+	clientCmd.Flags().StringVar(&clientDiscovery, "discovery", DefaultDiscoveryURL, "Discovery lookup URL")
 	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
 	clientCmd.Flags().StringVar(&clientLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientCmd.Flags().StringVar(&clientLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
@@ -347,14 +366,14 @@ func Execute() {
 				os.Exit(1)
 			}
 			
-			serverCertStruct, err := GenerateDeterministicCert(idPassphrase + "server")
+			serverCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixServer)
 			if err != nil {
 				fmt.Println("Error generating server cert:", err)
 				os.Exit(1)
 			}
 			serverID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0])
 			
-			clientCertStruct, err := GenerateDeterministicCert(idPassphrase + "client")
+			clientCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixClient)
 			if err != nil {
 				fmt.Println("Error generating client cert:", err)
 				os.Exit(1)

@@ -30,14 +30,19 @@ func UnlockLUKS(passphrase, p2pKeySeed, serverDeviceID string) error {
 		w.Close()
 	}()
 
-	cert, err := socket.GenerateDeterministicCert(p2pKeySeed)
+	// The suffix is not optional. Both ends derive their identity from the same seed and
+	// must land on *different* certificates; without it this side's Device ID matches
+	// neither the Server ID nor the Client ID that `syncthing-socket id --passphrase`
+	// prints, so the peer rejects it. We connect, so we are the client.
+	cert, err := socket.GenerateDeterministicCert(p2pKeySeed + socket.CertSuffixClient)
 	if err != nil {
 		return fmt.Errorf("failed to generate cert: %v", err)
 	}
 
 	// We run the client directly (in raw pipe mode, not as a shell/socks).
-	// discoveryServer and relayURIOverride are left empty to use global defaults.
-	err = socket.RunClient(context.Background(), serverDeviceID, "", cert, "", true, "", false, "", "")
+	// An empty discovery server yields a relative URL and fails every lookup, so pass the
+	// same default the CLI uses. relayURIOverride stays empty: resolve via discovery.
+	err = socket.RunClient(context.Background(), serverDeviceID, "", cert, socket.DefaultDiscoveryURL, true, "", false, "", "")
 	
 	if err != nil && !strings.Contains(err.Error(), "EOF") {
 		return fmt.Errorf("client failed: %v", err)
