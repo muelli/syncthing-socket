@@ -423,17 +423,38 @@ func loadOrGenerateCert(certPath, keyPath string) (tls.Certificate, error) {
 	return tlsutil.NewCertificate(certPath, keyPath, "syncthing-socket", 3650)
 }
 
-func announce(ctx context.Context, cert tls.Certificate, addresses []string, discoveryServers []string) {
+// relayURIProvider is the part of the relay client that announce needs: which relay we are
+// connected to right now.
+type relayURIProvider interface {
+	URI() *url.URL
+}
+
+// announceAddresses reports where this server can currently be reached.
+//
+// It re-reads the relay URI on every call rather than capturing it once. With the default
+// `dynamic+https://` pool, the relay client picks a relay and re-picks a different one
+// whenever it reconnects, which happens on any relay outage and immediately after an
+// "already connected" rejection. Announcing a captured address means discovery keeps
+// advertising a relay the server has since left, and clients then fail against every
+// address they are given.
+func announceAddresses(rc relayURIProvider, directPort int, actualPort int) []string {
+	var addrs []string
+	if rc != nil {
+		if uri := rc.URI(); uri != nil {
+			addrs = append(addrs, uri.String())
+		}
+	}
+	if directPort > 0 {
+		addrs = append(addrs, fmt.Sprintf("tcp://:%d", actualPort))
+	}
+	return addrs
+}
+
+// announce keeps this server findable. addresses is re-evaluated on every announcement, so
+// a relay change is published rather than papered over.
+func announce(ctx context.Context, cert tls.Certificate, addresses func() []string, discoveryServers []string) {
 	type AnnouncePayload struct {
 		Addresses []string `json:"addresses"`
-	}
-	payload := AnnouncePayload{
-		Addresses: addresses,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		slog.Error("Failed to marshal announce payload", "error", err)
-		return
 	}
 
 	tr := &http.Transport{
@@ -449,11 +470,37 @@ func announce(ctx context.Context, cert tls.Certificate, addresses []string, dis
 
 	for _, ds := range discoveryServers {
 		go func(ds string) {
+			// Refresh periodically so the record does not expire, and poll often enough
+			// that a relay change is published in seconds. Waiting up to 30 minutes to
+			// correct a stale address is useless to a machine sitting in its initramfs.
 			ticker := time.NewTicker(30 * time.Minute)
 			defer ticker.Stop()
+			recheck := time.NewTicker(15 * time.Second)
+			defer recheck.Stop()
+
+			var lastAnnounced string
 
 			for {
-				slog.Debug("Announcing availability to discovery server", "ds", ds, "addresses", addresses)
+				current := addresses()
+				key := strings.Join(current, ",")
+				if len(current) == 0 || key == lastAnnounced {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						lastAnnounced = "" // force a refresh on the next pass
+					case <-recheck.C:
+					}
+					continue
+				}
+
+				body, err := json.Marshal(AnnouncePayload{Addresses: current})
+				if err != nil {
+					slog.Error("Failed to marshal announce payload", "error", err)
+					return
+				}
+
+				slog.Debug("Announcing availability to discovery server", "ds", ds, "addresses", current)
 				req, err := http.NewRequestWithContext(ctx, "POST", ds, strings.NewReader(string(body)))
 				if err != nil {
 					slog.Error("Failed to create announce request", "ds", ds, "error", err)
@@ -465,7 +512,8 @@ func announce(ctx context.Context, cert tls.Certificate, addresses []string, dis
 					} else {
 						resp.Body.Close()
 						if resp.StatusCode == http.StatusNoContent {
-							slog.Info("Successfully announced availability", "ds", ds)
+							slog.Info("Successfully announced availability", "ds", ds, "addresses", current)
+							lastAnnounced = key
 						} else {
 							slog.Warn("Announce returned non-204 status", "ds", ds, "status", resp.StatusCode)
 						}
@@ -475,7 +523,9 @@ func announce(ctx context.Context, cert tls.Certificate, addresses []string, dis
 				select {
 				case <-ctx.Done():
 					return
+				case <-recheck.C:
 				case <-ticker.C:
+					lastAnnounced = "" // periodic refresh, even if nothing changed
 				}
 			}
 		}(ds)
@@ -569,7 +619,6 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 	var relayClient client.RelayClient
 	var connectedURI *url.URL
-	var announceAddrs []string
 
 	if relayURI != "" {
 		slog.Info("Relay client starting", "relay", u.String())
@@ -611,7 +660,6 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		slog.Info("Connected to relay", "uri", connectedURI.String())
 
 		systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
-		announceAddrs = append(announceAddrs, connectedURI.String())
 	} else {
 		systemdNotify("READY=1\nSTATUS=Listening for direct connections only")
 		if directPort > 0 {
@@ -621,13 +669,18 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			fmt.Fprintln(os.Stderr, "==================================================")
 		}
 	}
+	announcePort := 0
 	if directPort > 0 {
-		actualPort := tcpListener.Addr().(*net.TCPAddr).Port
-		announceAddrs = append(announceAddrs, fmt.Sprintf("tcp://:%d", actualPort))
+		announcePort = tcpListener.Addr().(*net.TCPAddr).Port
 	}
 
 	if len(discoveryServers) > 0 {
-		announce(ctx, cert, announceAddrs, discoveryServers)
+		// Pass a provider rather than a snapshot: the relay client re-picks a relay from
+		// the dynamic pool on every reconnect, and a snapshot would advertise the relay we
+		// used to be on for as long as the process runs.
+		announce(ctx, cert, func() []string {
+			return announceAddresses(relayClient, directPort, announcePort)
+		}, discoveryServers)
 	}
 
 	if forwardAddr != "" {
