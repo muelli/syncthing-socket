@@ -332,11 +332,25 @@ both, and whichever answers the prompt first wins.
 
 ## Security notes
 
-- Anyone who can read the initramfs or the LUKS2 header obtains an identity your key holder
-  authorises, and can therefore **ask** for the passphrase. Pinning the key holder's Device
-  ID does not change that; it only prevents impersonating the key holder. Close the gap with
-  `syncthing-socket server --totp`, or simply by only running the server when you actually
-  intend to unlock.
+- **The seed in the LUKS2 header is not the passphrase, but it is sensitive.** It is 32
+  random bytes, and both Syncthing identities are derived from it: the machine uses
+  `seed + "server"`, the key holder `seed + "client"`. The passphrase itself is never in
+  the header; it lives in the QR code and on the phone.
+- What seed disclosure costs you depends on the role, and it is worse for the phone flow:
+  - `UNLOCK_ROLE=server` (phone dials out): whoever reads the header can derive the
+    **machine's** identity and impersonate it. The phone checks the peer's Device ID, and
+    an impersonator presenting that same derived identity passes that check, so the next
+    time you tap Unlock the passphrase could go to the attacker rather than your machine.
+  - `UNLOCK_ROLE=client` (machine dials out): the reader instead obtains an identity your
+    key holder authorises, so they can **ask** for the passphrase. Pinning the key holder's
+    Device ID does not prevent that; it only stops them impersonating the key holder.
+- This is inherent rather than a flaw in the derivation: any identity a machine can
+  reconstruct unattended at boot is available to whoever holds its disk, exactly as a
+  Clevis header plus reachable Tang server unlocks a stolen disk. Sealing the key to a TPM
+  is what changes it.
+- Practical mitigations: `syncthing-socket server --totp`, running the key holder only when
+  you actually intend to unlock, and treating a disk that has left your control as needing
+  re-enrolment with a fresh seed.
 - The passphrase never touches disk on the booting machine. It goes from the client's stdout
   through a FIFO in `/run` straight into cryptsetup.
 - Traffic is TLS 1.3 end to end and relays cannot read it, but they do see that two device

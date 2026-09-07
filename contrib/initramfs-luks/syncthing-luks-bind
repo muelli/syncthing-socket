@@ -57,4 +57,4 @@ echo "Injecting syncthing-socket metadata into $DEVICE..."
 # `token import` is the verb for custom JSON. `token add` is for keyring tokens and does
 # not accept --json at all.
 cryptsetup token import --json-file="$TMPJSON" "$DEVICE"
-echo "Success. Verify with: cryptsetup token export --token-id <n> $DEVICE"
+echo "Success. Verify with: sudo cryptsetup token export --token-id 0 $DEVICE"
