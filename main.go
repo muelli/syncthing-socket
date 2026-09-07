@@ -169,6 +169,10 @@ func Execute() {
 				os.Exit(1)
 			}
 
+			if modes == 0 {
+				reservePipeStdout()
+			}
+
 			var cert tls.Certificate
 			var err error
 			if serverPassphrase != "" {
@@ -223,12 +227,12 @@ func Execute() {
 			}
 			if serverTOTPSecret != "" {
 				otpURL := fmt.Sprintf("otpauth://totp/syncthing-socket:server?secret=%s&issuer=syncthing-socket", serverTOTPSecret)
-				fmt.Printf("\n==================================================\n")
-				fmt.Printf("TOTP Authentication Enabled! Secret: %s\n", serverTOTPSecret)
-				fmt.Printf("URL: %s\n\n", otpURL)
-				fmt.Printf("Scan this QR code with your Authenticator App:\n\n")
-				qrterminal.GenerateHalfBlock(otpURL, qrterminal.L, os.Stdout)
-				fmt.Printf("==================================================\n\n")
+				fmt.Fprintf(os.Stderr, "\n==================================================\n")
+				fmt.Fprintf(os.Stderr, "TOTP Authentication Enabled! Secret: %s\n", serverTOTPSecret)
+				fmt.Fprintf(os.Stderr, "URL: %s\n\n", otpURL)
+				fmt.Fprintf(os.Stderr, "Scan this QR code with your Authenticator App:\n\n")
+				qrterminal.GenerateHalfBlock(otpURL, qrterminal.L, os.Stderr)
+				fmt.Fprintf(os.Stderr, "==================================================\n\n")
 			}
 
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -275,6 +279,10 @@ func Execute() {
 				os.Exit(1)
 			}
 
+			if modes == 0 {
+				reservePipeStdout()
+			}
+
 			var targetStr string
 			if clientPassphrase != "" {
 				if len(args) > 0 {
@@ -282,7 +290,7 @@ func Execute() {
 				}
 			} else {
 				if len(args) < 1 {
-					fmt.Println("Error: client mode requires target server Device ID unless --passphrase is used")
+					fmt.Fprintln(os.Stderr, "Error: client mode requires target server Device ID unless --passphrase is used")
 					cmd.Usage()
 					os.Exit(1)
 				}
@@ -362,20 +370,20 @@ func Execute() {
 		Short: "Compute Device IDs from a passphrase",
 		Run: func(cmd *cobra.Command, args []string) {
 			if idPassphrase == "" {
-				fmt.Println("Error: --passphrase is required")
+				fmt.Fprintln(os.Stderr, "Error: --passphrase is required")
 				os.Exit(1)
 			}
 			
 			serverCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixServer)
 			if err != nil {
-				fmt.Println("Error generating server cert:", err)
+				fmt.Fprintln(os.Stderr, "Error generating server cert:", err)
 				os.Exit(1)
 			}
 			serverID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0])
 			
 			clientCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixClient)
 			if err != nil {
-				fmt.Println("Error generating client cert:", err)
+				fmt.Fprintln(os.Stderr, "Error generating client cert:", err)
 				os.Exit(1)
 			}
 			clientID := syncthingprotocol.NewDeviceID(clientCertStruct.Certificate[0])
@@ -527,9 +535,12 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 
 	serverID := syncthingprotocol.NewDeviceID(cert.Certificate[0])
-	fmt.Println("==================================================")
-	fmt.Printf("Server Device ID: %s\n", serverID)
-	fmt.Println("==================================================")
+	// Everything informational goes to stderr: in the default pipe mode stdout carries the
+	// payload, and a caller capturing it with $(...), an initramfs unlock script for
+	// example, would otherwise get this banner prepended to the data.
+	fmt.Fprintln(os.Stderr, "==================================================")
+	fmt.Fprintf(os.Stderr, "Server Device ID: %s\n", serverID)
+	fmt.Fprintln(os.Stderr, "==================================================")
 	slog.Info("Server Device ID computed", "id", serverID.String())
 
 	var tcpListener net.Listener
@@ -543,8 +554,8 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 
 		actualPort := tcpListener.Addr().(*net.TCPAddr).Port
 		slog.Info("Direct TCP listener started", "port", actualPort)
-		fmt.Printf("Direct TCP Port: %d\n", actualPort)
-		fmt.Println("==================================================")
+		fmt.Fprintf(os.Stderr, "Direct TCP Port: %d\n", actualPort)
+		fmt.Fprintln(os.Stderr, "==================================================")
 	}
 
 	extraFlags := ""
@@ -591,12 +602,12 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			}
 		}
 
-		fmt.Printf("Connected to Relay: %s\n", connectedURI.String())
-		fmt.Printf("To connect, run:\n")
-		fmt.Printf("  ./syncthing-socket client%s -relay %q %s\n", extraFlags, connectedURI.String(), serverID.String())
-		fmt.Printf("Or simply:\n")
-		fmt.Printf("  ./syncthing-socket client%s %s@%s\n", extraFlags, serverID.String(), connectedURI.String())
-		fmt.Println("==================================================")
+		fmt.Fprintf(os.Stderr, "Connected to Relay: %s\n", connectedURI.String())
+		fmt.Fprintf(os.Stderr, "To connect, run:\n")
+		fmt.Fprintf(os.Stderr, "  ./syncthing-socket client%s -relay %q %s\n", extraFlags, connectedURI.String(), serverID.String())
+		fmt.Fprintf(os.Stderr, "Or simply:\n")
+		fmt.Fprintf(os.Stderr, "  ./syncthing-socket client%s %s@%s\n", extraFlags, serverID.String(), connectedURI.String())
+		fmt.Fprintln(os.Stderr, "==================================================")
 		slog.Info("Connected to relay", "uri", connectedURI.String())
 
 		systemdNotify(fmt.Sprintf("READY=1\nSTATUS=Connected to %s", connectedURI.String()))
@@ -605,9 +616,9 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		systemdNotify("READY=1\nSTATUS=Listening for direct connections only")
 		if directPort > 0 {
 			actualPort := tcpListener.Addr().(*net.TCPAddr).Port
-			fmt.Printf("To connect directly, run:\n")
-			fmt.Printf("  ./syncthing-socket client%s -relay \"tcp://127.0.0.1:%d\" %s\n", extraFlags, actualPort, serverID.String())
-			fmt.Println("==================================================")
+			fmt.Fprintf(os.Stderr, "To connect directly, run:\n")
+			fmt.Fprintf(os.Stderr, "  ./syncthing-socket client%s -relay \"tcp://127.0.0.1:%d\" %s\n", extraFlags, actualPort, serverID.String())
+			fmt.Fprintln(os.Stderr, "==================================================")
 		}
 	}
 	if directPort > 0 {
@@ -969,22 +980,75 @@ func handleClientConn(ctx context.Context, finalConn net.Conn, localSocks string
 	}
 }
 
+// halfCloser is implemented by connections that can signal end-of-transmission on their
+// write side without tearing down the read side: *tls.Conn, *net.TCPConn and *WebRTCConn.
+type halfCloser interface {
+	CloseWrite() error
+}
+
+// pipeFlushGrace bounds how long a still-running stdin->remote copy is given to flush
+// after the peer has stopped sending.
+const pipeFlushGrace = 2 * time.Second
+
+// pipeBiDirectional wires stdin/stdout to conn with netcat-like semantics: local stdin
+// reaching EOF ends only our half of the stream, and we return once the peer is done
+// sending.
+//
+// Tearing the whole connection down on stdin EOF, the previous behaviour, silently
+// lost payloads in both directions. It broke the LUKS unlock flow at both ends: the
+// booting machine runs the client from a cryptsetup keyscript whose stdin is frequently
+// /dev/null (already at EOF), and the key holder runs a one-shot
+// `printf %s secret | syncthing-socket server`, which closed the connection the moment
+// the payload had been queued.
+// dataStdout is where payload bytes go in plain pipe mode. It is the real stdout;
+// reservePipeStdout re-points descriptor 1 at stderr so nothing else can write into it.
+var dataStdout = os.Stdout
+
+// reservePipeStdout must be called once, before any relay or discovery traffic starts, and
+// only in plain pipe mode, where stdout carries the payload. Modes that legitimately stream
+// to the terminal (--shell, --socks) leave stdout alone.
+func reservePipeStdout() {
+	dataStdout = reserveDataStdout()
+}
+
 func pipeBiDirectional(conn net.Conn) {
-	errChan := make(chan error, 2)
+	stdinDone := make(chan struct{})
 
 	go func() {
-		_, err := CopyWithTrace(os.Stdout, conn, "remote->stdout")
-		errChan <- err
+		defer close(stdinDone)
+		written, err := CopyWithTrace(conn, os.Stdin, "stdin->remote")
+		if err != nil && err != io.EOF {
+			slog.Error("Connection error", "direction", "stdin->remote", "error", err)
+			return
+		}
+		// Having sent nothing, there is no transmission to end. Staying quiet matters:
+		// a WebRTC data channel cannot half-close (RFC 8831 section 6.7), so signalling
+		// here would tear down the direction we are still waiting to receive on. That is
+		// exactly the LUKS client's situation: its stdin is /dev/null, at EOF from the
+		// start, while the key holder has yet to send the passphrase.
+		if written == 0 {
+			return
+		}
+		// Signal end-of-input to the peer, so a one-shot sender's reader learns it is done.
+		if hc, ok := conn.(halfCloser); ok {
+			if err := hc.CloseWrite(); err != nil {
+				slog.Debug("Half-close failed", "error", err)
+			}
+		}
 	}()
 
-	go func() {
-		_, err := CopyWithTrace(conn, os.Stdin, "stdin->remote")
-		errChan <- err
-	}()
+	if _, err := CopyWithTrace(dataStdout, conn, "remote->stdout"); err != nil && err != io.EOF {
+		slog.Error("Connection error", "direction", "remote->stdout", "error", err)
+	}
 
-	err := <-errChan
-	if err != nil && err != io.EOF {
-		slog.Error("Connection error", "error", err)
+	// The peer stopped sending. If our own stdin copy is still running, give it a moment
+	// to flush: a one-shot payload must not be lost just because the peer half-closed
+	// first. A terminal stdin never reaches EOF, so waiting on it would only delay exit.
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		select {
+		case <-stdinDone:
+		case <-time.After(pipeFlushGrace):
+		}
 	}
 }
 

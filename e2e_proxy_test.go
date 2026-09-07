@@ -64,13 +64,15 @@ func TestHTTPProxyRouting(t *testing.T) {
 	cmdServer := exec.Command("./test-proxy-binary", "server", "--passphrase", passphrase, "--log-level", "debug", "--log-format", "text", "--discovery", "")
 	cmdServer.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:8888") // Inject proxy!
 	
-	// Capture output to look for our proxy logs
+	// Watch stderr, not stdout. In plain pipe mode stdout carries the payload and nothing
+	// else: the banner and the relay library's own logging are deliberately kept off it so
+	// that a caller capturing $(...) as a LUKS passphrase gets exactly the passphrase.
 	outputChan := make(chan string, 100)
-	stdout, _ := cmdServer.StdoutPipe()
+	stderr, _ := cmdServer.StderrPipe()
 	go func() {
 		buf := make([]byte, 1024)
 		for {
-			n, err := stdout.Read(buf)
+			n, err := stderr.Read(buf)
 			if n > 0 {
 				outputChan <- string(buf[:n])
 			}
@@ -79,7 +81,6 @@ func TestHTTPProxyRouting(t *testing.T) {
 			}
 		}
 	}()
-	cmdServer.Stderr = os.Stderr
 
 	if err := cmdServer.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)

@@ -99,6 +99,34 @@ func (c *WebRTCConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
+// bufferedAmounter is satisfied by pion's detached data channel.
+type bufferedAmounter interface {
+	BufferedAmount() uint64
+}
+
+// webrtcFlushTimeout bounds how long CloseWrite waits for SCTP to drain.
+const webrtcFlushTimeout = 5 * time.Second
+
+// CloseWrite ends this side's transmission.
+//
+// A WebRTC data channel has no half-close: per RFC 8831 section 6.7 the peer mirrors any
+// stream reset it sees, so resetting tears down both directions. Callers must therefore
+// only invoke this once they are actually done sending. A side that has sent nothing
+// must stay quiet, or it destroys the direction it is still waiting to receive on.
+//
+// The queued payload is drained before the reset so the peer reads it and *then* sees
+// EOF. Close() cannot be used here: it also closes the PeerConnection, which aborts the
+// SCTP association and discards data the peer has not read yet.
+func (c *WebRTCConn) CloseWrite() error {
+	if ba, ok := c.ReadWriteCloser.(bufferedAmounter); ok {
+		deadline := time.Now().Add(webrtcFlushTimeout)
+		for ba.BufferedAmount() > 0 && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	return c.ReadWriteCloser.Close()
+}
+
 func (c *WebRTCConn) Close() error {
 	err := c.ReadWriteCloser.Close()
 	if c.pc != nil {
