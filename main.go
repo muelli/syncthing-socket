@@ -103,6 +103,10 @@ var (
 	serverLogFormat  string
 	serverTOTP       bool
 	serverTOTPSecret string
+	// Read where announce() is started rather than threaded through runServer, whose
+	// parameter list is already long enough to make positional mistakes easy. The value
+	// is process-global either way.
+	serverAnnounceInterval time.Duration
 
 	clientCert       string
 	clientKey        string
@@ -261,6 +265,9 @@ func Execute() {
 	serverCmd.Flags().StringVar(&serverLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
 	serverCmd.Flags().BoolVar(&serverTOTP, "totp", false, "Enable Time-Based One-Time Password (TOTP) authentication (auto-generates secret if --totp-secret is not set)")
 	serverCmd.Flags().StringVar(&serverTOTPSecret, "totp-secret", "", "Shared base32 secret for TOTP authentication")
+	serverCmd.Flags().DurationVar(&serverAnnounceInterval, "announce-interval", DefaultAnnounceInterval,
+		"How often to refresh the discovery record. Shorten it when a key holder needs to "+
+			"see that this machine is still waiting, as the initramfs unlock does.")
 
 	var clientCmd = &cobra.Command{
 		Use:   "client [target]",
@@ -466,9 +473,25 @@ func announceAddresses(rc relayURIProvider, directPort int, actualPort int) []st
 	return addrs
 }
 
+// DefaultAnnounceInterval is how often a long-running server refreshes its discovery
+// record. It is deliberately lazy: the record outlives it comfortably, and these are
+// shared public servers.
+const DefaultAnnounceInterval = 30 * time.Minute
+
+// UnlockAnnounceInterval is what a machine waiting in its initramfs uses instead.
+//
+// The point is not to keep the record alive, which the lazy interval already does. It is
+// that the record's "seen" timestamp is the only evidence anyone has that the machine is
+// still waiting: discovery keeps a record for over an hour after the machine has stopped
+// announcing, so at the default interval "seen" cannot distinguish a machine waiting right
+// now from one that finished booting twenty minutes ago. Announcing this often makes
+// "seen" mean what a key holder needs it to mean, and it only applies during the few
+// minutes a machine actually sits at its prompt.
+const UnlockAnnounceInterval = 60 * time.Second
+
 // announce keeps this server findable. addresses is re-evaluated on every announcement, so
 // a relay change is published rather than papered over.
-func announce(ctx context.Context, cert tls.Certificate, addresses func() []string, discoveryServers []string) {
+func announce(ctx context.Context, cert tls.Certificate, addresses func() []string, discoveryServers []string, interval time.Duration) {
 	type AnnouncePayload struct {
 		Addresses []string `json:"addresses"`
 	}
@@ -489,7 +512,7 @@ func announce(ctx context.Context, cert tls.Certificate, addresses func() []stri
 			// Refresh periodically so the record does not expire, and poll often enough
 			// that a relay change is published in seconds. Waiting up to 30 minutes to
 			// correct a stale address is useless to a machine sitting in its initramfs.
-			ticker := time.NewTicker(30 * time.Minute)
+			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			recheck := time.NewTicker(15 * time.Second)
 			defer recheck.Stop()
@@ -546,6 +569,67 @@ func announce(ctx context.Context, cert tls.Certificate, addresses func() []stri
 			}
 		}(ds)
 	}
+}
+
+// DiscoveryRecord is what global discovery knows about a device.
+//
+// Seen is the part that matters to a key holder deciding whether to bother trying: the
+// record itself outlives the machine by over an hour, so its presence says only that the
+// machine announced at some point, while Seen says when.
+type DiscoveryRecord struct {
+	Seen      time.Time
+	Addresses []string
+}
+
+// LookupRecord fetches the full discovery record, timestamp included.
+//
+// Unlike lookup() below it verifies the discovery server's certificate. lookup() is on the
+// unlock path, where a custom or self-hosted discovery server is a supported setup and the
+// peer is authenticated by its own certificate regardless of what discovery claims. This
+// one is only ever pointed at the public endpoint.
+func LookupRecord(ctx context.Context, serverID string, discoveryServer string) (*DiscoveryRecord, error) {
+	urlStr := fmt.Sprintf("%s&device=%s", discoveryServer, serverID)
+	if !strings.Contains(discoveryServer, "?") {
+		urlStr = fmt.Sprintf("%s?device=%s", discoveryServer, serverID)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Not an error: a machine that has never announced, or has been gone long enough for
+	// the record to expire, is the ordinary "nothing is waiting" case.
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("discovery lookup returned HTTP %d", resp.StatusCode)
+	}
+
+	var body struct {
+		Seen      string   `json:"seen"`
+		Addresses []string `json:"addresses"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+
+	record := &DiscoveryRecord{Addresses: body.Addresses}
+	if body.Seen != "" {
+		// A record we cannot date is treated as undated rather than as an error: the
+		// addresses are still usable, and the caller reports "announced, age unknown".
+		if seen, err := time.Parse(time.RFC3339, body.Seen); err == nil {
+			record.Seen = seen
+		}
+	}
+	return record, nil
 }
 
 func lookup(ctx context.Context, serverID string, discoveryServer string) ([]string, error) {
@@ -694,9 +778,13 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		// Pass a provider rather than a snapshot: the relay client re-picks a relay from
 		// the dynamic pool on every reconnect, and a snapshot would advertise the relay we
 		// used to be on for as long as the process runs.
+		interval := serverAnnounceInterval
+		if interval <= 0 {
+			interval = DefaultAnnounceInterval
+		}
 		announce(ctx, cert, func() []string {
 			return announceAddresses(relayClient, directPort, announcePort)
-		}, discoveryServers)
+		}, discoveryServers, interval)
 	}
 
 	if forwardAddr != "" {

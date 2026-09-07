@@ -218,6 +218,12 @@ Run `syncthing-luks-setup` on the machine, scan the QR code it prints (or type t
 three values into the app), and from then on the phone offers a single **Unlock** button,
 guarded by your screen lock or fingerprint.
 
+The unlock screen also says whether the computer looks like it is waiting, by reading how
+recently it announced itself to Syncthing's discovery servers. Green means it announced in
+the last couple of minutes; amber means the record is old, so it may already have booted;
+red means nothing is announcing yet. It is advice rather than a gate, and the button works
+in every state.
+
 ### Re-pairing a phone
 
 The seed lives in the LUKS2 header, so a replacement phone does not need the machine

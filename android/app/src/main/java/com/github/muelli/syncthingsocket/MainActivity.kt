@@ -69,6 +69,15 @@ import java.util.concurrent.Executors
 /** What the user is doing. The app is only ever in one of these. */
 private enum class Phase { Enroll, ManualEnroll, Scanning, Unlock, ShowPairing, KeyLost, NoScreenLock }
 
+/**
+ * Whether the computer looks like it is waiting, from the discovery record's timestamp.
+ *
+ * This is advice, not a gate: every state leaves the unlock button usable, because
+ * discovery can lag a machine that is genuinely ready and the user may know better than we
+ * do. It exists to answer "is it worth pressing yet?".
+ */
+private enum class Readiness { Checking, Waiting, Stale, Absent, NoNetwork }
+
 /** What the unlock screen is showing. */
 private sealed class UnlockUi {
     object Idle : UnlockUi()
@@ -103,7 +112,26 @@ private class CredentialStore(private val context: Context) {
         val passphrase = prefs.getString(KEY_PASSPHRASE, null) ?: return null
         val seed = prefs.getString(KEY_SEED, null) ?: return null
         val deviceId = prefs.getString(KEY_DEVICE_ID, null) ?: return null
+        // Backfill the public copy for pairings saved before it was kept separately.
+        rememberPublicDeviceId(deviceId)
         return Pairing(passphrase, seed, deviceId)
+    }
+
+    /**
+     * The computer's Device ID, readable without authenticating.
+     *
+     * A Syncthing Device ID is public by design: it names a peer, and holding it lets you
+     * ask discovery where that peer is, nothing more. Keeping a copy outside the encrypted
+     * store is what lets the unlock screen poll for readiness without putting a biometric
+     * prompt in front of every refresh. The passphrase and the seed stay encrypted.
+     */
+    fun publicDeviceId(): String? =
+        context.getSharedPreferences(FLAG_PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_PUBLIC_DEVICE_ID, null)
+
+    private fun rememberPublicDeviceId(deviceId: String) {
+        context.getSharedPreferences(FLAG_PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_PUBLIC_DEVICE_ID, deviceId).apply()
     }
 
     fun save(pairing: Pairing) {
@@ -113,7 +141,10 @@ private class CredentialStore(private val context: Context) {
             .putString(KEY_DEVICE_ID, pairing.deviceId)
             .commit()
         context.getSharedPreferences(FLAG_PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_ENROLLED, true).commit()
+            .edit()
+            .putBoolean(KEY_ENROLLED, true)
+            .putString(KEY_PUBLIC_DEVICE_ID, pairing.deviceId)
+            .commit()
     }
 
     /**
@@ -125,7 +156,7 @@ private class CredentialStore(private val context: Context) {
     fun discardUnreadable() {
         context.deleteSharedPreferences(SECRET_PREFS)
         context.getSharedPreferences(FLAG_PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_ENROLLED, false).commit()
+            .edit().putBoolean(KEY_ENROLLED, false).remove(KEY_PUBLIC_DEVICE_ID).commit()
     }
 
     private fun encrypted() = EncryptedSharedPreferences.create(
@@ -146,6 +177,7 @@ private class CredentialStore(private val context: Context) {
         private const val KEY_PASSPHRASE = "passphrase"
         private const val KEY_SEED = "phone_seed"
         private const val KEY_DEVICE_ID = "laptop_id"
+        private const val KEY_PUBLIC_DEVICE_ID = "laptop_id_public"
 
         /**
          * How long an authentication stays usable. Long enough to decrypt and run one
@@ -162,6 +194,7 @@ class MainActivity : FragmentActivity() {
 
     private val phase = mutableStateOf(Phase.Enroll)
     private val unlockUi = mutableStateOf<UnlockUi>(UnlockUi.Idle)
+    private val readiness = mutableStateOf(Readiness.Checking)
     private val notice = mutableStateOf<String?>(null)
 
     /**
@@ -223,6 +256,8 @@ class MainActivity : FragmentActivity() {
 
                         Phase.Unlock -> UnlockScreen(
                             state = unlockUi.value,
+                            readiness = readiness.value,
+                            onPoll = { pollReadiness() },
                             notice = notice.value,
                             onUnlockClick = { notice.value = null; startUnlock() },
                             onShowPairingClick = { showPairing() },
@@ -346,6 +381,37 @@ class MainActivity : FragmentActivity() {
             shownPairing.value = pairing
             phase.value = Phase.ShowPairing
         }
+    }
+
+    /**
+     * Asks discovery whether the computer is announcing itself.
+     *
+     * Reads only the Device ID, which is public and kept in ordinary preferences, so this
+     * needs no authentication and never touches the encrypted store. It deliberately does
+     * not connect to the computer: in this topology the computer serves exactly one
+     * connection and then stops waiting, so polling it would consume the state being
+     * reported on and push the real unlock into a retry.
+     */
+    private fun pollReadiness() {
+        val deviceId = store.publicDeviceId()
+        if (deviceId == null) {
+            readiness.value = Readiness.Checking
+            return
+        }
+        Thread {
+            val next = runCatching { Mobile.checkServerStatus(deviceId) }.fold(
+                onSuccess = { status ->
+                    when (status.state) {
+                        "WAITING" -> Readiness.Waiting
+                        "STALE" -> Readiness.Stale
+                        "ABSENT" -> Readiness.Absent
+                        else -> Readiness.NoNetwork
+                    }
+                },
+                onFailure = { Readiness.NoNetwork }
+            )
+            runOnUiThread { readiness.value = next }
+        }.start()
     }
 
     private fun startUnlock() {
@@ -616,6 +682,8 @@ private fun ManualEnrollScreen(
 @Composable
 private fun UnlockScreen(
     state: UnlockUi,
+    readiness: Readiness,
+    onPoll: () -> Unit,
     notice: String?,
     onUnlockClick: () -> Unit,
     onShowPairingClick: () -> Unit,
@@ -624,6 +692,19 @@ private fun UnlockScreen(
     val unlockFocus = remember { FocusRequester() }
     val unlockInteraction = remember { MutableInteractionSource() }
     LaunchedEffect(state) { if (state !is UnlockUi.Working) unlockFocus.requestFocus() }
+
+    // Poll only while the user is looking at a screen where the answer changes what they
+    // do. LaunchedEffect is cancelled when the screen leaves the composition or the state
+    // changes, so this stops on its own during an unlock, after success, and whenever the
+    // app is not showing this screen. No background work, no wakelocks.
+    if (state is UnlockUi.Idle || state is UnlockUi.Failed) {
+        LaunchedEffect(state) {
+            while (true) {
+                onPoll()
+                delay(READINESS_POLL_MILLIS)
+            }
+        }
+    }
 
     // Success ends the task: there is nothing else to do here, and leaving the app open
     // invites a second unlock nobody asked for.
@@ -654,6 +735,10 @@ private fun UnlockScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(stringResource(R.string.unlock_title), style = MaterialTheme.typography.headlineMedium)
+        if (state is UnlockUi.Idle || state is UnlockUi.Failed) {
+            Spacer(Modifier.height(20.dp))
+            ReadinessChip(readiness)
+        }
         if (notice != null && state is UnlockUi.Idle) {
             Spacer(Modifier.height(24.dp))
             NoticeCard(notice)
@@ -791,6 +876,46 @@ private fun PairingValue(label: String, value: String) {
         SelectionContainer {
             Text(value, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+}
+
+/** How often the unlock screen re-asks discovery. */
+private const val READINESS_POLL_MILLIS = 5000L
+
+/**
+ * Says whether the computer looks ready, and never disables the unlock button.
+ *
+ * The colours mean something specific. Green is not "this will work", it is "the computer
+ * announced itself in the last couple of minutes". Amber is the important one: discovery
+ * keeps a record for over an hour after a machine stops announcing, so an old record says
+ * only that the computer was waiting at some point. Reporting that as ready would be
+ * confidently wrong exactly when someone glances at the phone.
+ */
+@Composable
+private fun ReadinessChip(readiness: Readiness) {
+    val (dotColor, message) = when (readiness) {
+        Readiness.Waiting -> Color(0xFF2E7D32) to stringResource(R.string.status_waiting)
+        Readiness.Stale -> Color(0xFFF9A825) to stringResource(R.string.status_stale)
+        Readiness.Absent -> Color(0xFFC62828) to stringResource(R.string.status_absent)
+        Readiness.NoNetwork -> Color(0xFF757575) to stringResource(R.string.status_no_network)
+        Readiness.Checking -> Color(0xFF757575) to stringResource(R.string.status_checking)
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(dotColor, CircleShape)
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

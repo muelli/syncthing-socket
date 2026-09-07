@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"syncthing-socket"
 )
@@ -94,4 +95,93 @@ func ClassifyUnlockError(msg string) string {
 	default:
 		return ErrUnknown
 	}
+}
+
+// Server readiness, as reported to the unlock screen.
+//
+// These say what discovery knows, which is not the same as whether an unlock will work.
+// They exist to answer "is it worth pressing the button yet?", and the honest answer is
+// built entirely out of the record's timestamp: discovery keeps a record for more than an
+// hour after a machine stops announcing, so presence alone would report a machine as
+// waiting long after it had finished booting.
+const (
+	// StatusWaiting means the machine announced within the last couple of minutes. It is
+	// almost certainly still sitting at its prompt.
+	StatusWaiting = "WAITING"
+	// StatusStale means there is a record, but an old one. The machine announced at some
+	// point and may since have booted, been shut down, or lost its network. Trying costs
+	// nothing, but do not promise the user it will work.
+	StatusStale = "STALE"
+	// StatusAbsent means discovery has nothing. Either the machine has not reached its
+	// prompt yet, or it has been gone long enough for the record to expire. A freshly
+	// booted machine takes around 30 seconds to appear.
+	StatusAbsent = "ABSENT"
+	// StatusNoNetwork means this phone could not reach discovery at all, so nothing is
+	// known about the machine either way.
+	StatusNoNetwork = "NO_NETWORK"
+)
+
+// freshRecordAge is how new a record must be to count as "waiting now".
+//
+// The machine announces every 60 seconds while it waits (see socket.UnlockAnnounceInterval),
+// so this allows one missed announcement plus slack for the discovery server's own clock.
+// Too tight and a waiting machine flickers to stale between announcements; too loose and
+// this reports the machine as waiting after it has already booted.
+const freshRecordAge = 150 * time.Second
+
+// ServerStatus is the answer, shaped for gomobile: no time.Time, no slices.
+type ServerStatus struct {
+	State string
+	// AgeSeconds is how long ago the machine last announced, or -1 when that is unknown
+	// because there is no record or it carried no usable timestamp.
+	AgeSeconds int
+}
+
+// CheckServerStatus asks discovery whether the machine looks like it is waiting.
+//
+// It is a single plain HTTPS GET on a public endpoint. It needs no seed and does no
+// crypto, and deliberately does not connect to the machine: in the phone topology the
+// machine serves exactly one connection and then stops waiting, so probing it would
+// consume the very state being reported on and push the real unlock into a retry.
+func CheckServerStatus(serverDeviceID string) (*ServerStatus, error) {
+	return checkAgainst(socket.DefaultDiscoveryURL, serverDeviceID)
+}
+
+// checkAgainst is CheckServerStatus with the discovery endpoint injected, so the states
+// can be tested against known responses rather than against whatever the public server
+// happens to be saying today. Unexported: gomobile only needs the one entry point.
+func checkAgainst(discoveryURL, serverDeviceID string) (*ServerStatus, error) {
+	if strings.TrimSpace(serverDeviceID) == "" {
+		return nil, fmt.Errorf("no device ID to look up")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	record, err := socket.LookupRecord(ctx, serverDeviceID, discoveryURL)
+	if err != nil {
+		// Cannot reach discovery, so nothing is known. This is not the same as the
+		// machine being absent, and must not be shown as though it were.
+		return &ServerStatus{State: StatusNoNetwork, AgeSeconds: -1}, nil
+	}
+	if record == nil {
+		return &ServerStatus{State: StatusAbsent, AgeSeconds: -1}, nil
+	}
+	if record.Seen.IsZero() {
+		// A record with no usable timestamp. It exists, so something announced, but its
+		// age is exactly the thing we cannot vouch for.
+		return &ServerStatus{State: StatusStale, AgeSeconds: -1}, nil
+	}
+
+	age := time.Since(record.Seen)
+	if age < 0 {
+		// Clock skew between this phone and the discovery server. Treat a record from
+		// the future as new, since the alternative is calling a live machine stale.
+		age = 0
+	}
+	state := StatusStale
+	if age <= freshRecordAge {
+		state = StatusWaiting
+	}
+	return &ServerStatus{State: state, AgeSeconds: int(age.Seconds())}, nil
 }

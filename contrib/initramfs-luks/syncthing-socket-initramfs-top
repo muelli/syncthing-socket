@@ -154,12 +154,18 @@ unlock_loop() {
 			# Announce and wait for the key holder to connect and push the passphrase.
 			# Here KEY_BEARING_DEVICE_ID is who we accept rather than who we dial; in
 			# both roles it names the same thing, the device holding the passphrase.
+			# --announce-interval is short on purpose: the key holder decides
+			# whether this machine is still waiting from the discovery record's
+			# timestamp, and the default interval refreshes it far too rarely to
+			# tell "waiting now" from "finished booting twenty minutes ago".
 			if [ -n "$KEY_BEARING_DEVICE_ID" ]; then
 				KEY=$("$SYNCTHING_SOCKET_BIN" server --passphrase "$P2P_KEY_SEED" \
 					--authorized-clients "$KEY_BEARING_DEVICE_ID" \
+					--announce-interval 60s \
 					--log-level error < /dev/null 2>/dev/console)
 			else
 				KEY=$("$SYNCTHING_SOCKET_BIN" server --passphrase "$P2P_KEY_SEED" \
+					--announce-interval 60s \
 					--log-level error < /dev/null 2>/dev/console)
 			fi
 		elif [ -n "$KEY_BEARING_DEVICE_ID" ]; then

@@ -332,6 +332,30 @@ initramfs; until you do, the header still names the old phone. Rotating the seed
 change the disk passphrase, so if that is what leaked, change it with `cryptsetup
 luksChangeKey` and enrol again afterwards.
 
+### Telling whether the machine is waiting
+
+While it sits at its prompt, the machine re-announces itself every 60 seconds rather than
+at the lazy default interval, so the discovery record's `seen` timestamp says whether it is
+still there:
+
+```bash
+curl -s "https://discovery-lookup.syncthing.net/v2/?device=$MACHINE_DEVICE_ID"
+```
+
+```
+{"seen":"2026-09-07T18:42:00Z","addresses":["relay://..."]}
+```
+
+A `seen` within the last couple of minutes means the machine is waiting now. **The presence
+of a record does not**, and this is the trap: discovery keeps a record for more than an hour
+after a machine stops announcing, so a stale record will happily tell you a machine is
+waiting long after it has finished booting. Read the timestamp, not the 404.
+
+The Android app does exactly this, every few seconds while its unlock screen is open, and
+shows green, amber or red accordingly. It never connects to the machine to find out: in the
+phone topology the machine serves one connection and then stops waiting, so probing it
+would consume the state being reported on.
+
 ### If it does not unlock
 
 The machine keeps retrying, so you can take your time. In order of likelihood:

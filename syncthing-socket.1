@@ -63,6 +63,9 @@ Specify a custom Syncthing relay URI or dynamic pool URL. Defaults to the global
 .BR \-\-discovery " \fIURL\fR"
 Comma-separated discovery announce URLs. Set to empty string ("") to disable discovery announcements.
 .TP
+.BR \-\-announce\-interval " \fIDURATION\fR"
+How often to refresh the discovery record. Defaults to 30m, which is lazy on purpose: the record outlives that comfortably and these are shared public servers. Shorten it when something needs to tell from the record that this server is still running, as the initramfs LUKS unlock does with 60s. The record's "seen" timestamp is the only evidence a key holder has that a machine is still waiting, and discovery keeps a record for over an hour after a machine stops announcing.
+.TP
 .BR \-\-authorized\-clients " \fIDEVICE_IDS\fR"
 Comma-separated list of authorized client Syncthing Device IDs. When set, incoming connections from clients whose Device ID is not in this list are immediately closed post-TLS handshake.
 .TP

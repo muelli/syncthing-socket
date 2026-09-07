@@ -458,6 +458,10 @@ func fetchPassphrase(cfg *luksConfig) (string, error) {
 		if cfg.KeyBearingDeviceID != "" {
 			args = append(args, "--authorized-clients", cfg.KeyBearingDeviceID)
 		}
+		// Announce often while waiting, so the key holder can tell from the record's
+		// timestamp that this machine is still at its prompt. The default interval is
+		// far too lazy for that; see UnlockAnnounceInterval.
+		args = append(args, "--announce-interval", UnlockAnnounceInterval.String())
 	case "client":
 		if cfg.KeyBearingDeviceID != "" {
 			args = append(args, cfg.KeyBearingDeviceID)

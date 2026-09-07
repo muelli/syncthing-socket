@@ -32,6 +32,18 @@
     <string name="unlock_success">Unlocked</string>
     <string name="unlock_retry">Try again</string>
 
+    <!-- Readiness, from the discovery record's timestamp. Advice, never a gate: the
+         unlock button stays usable in every one of these states. -->
+    <string name="status_checking">Checking whether your computer is waiting…</string>
+    <string name="status_waiting">Your computer is waiting to be unlocked.</string>
+    <string name="status_stale">Your computer announced itself a while ago, but not
+        recently. It may have finished booting already, or lost its network. Unlocking may
+        still work.</string>
+    <string name="status_absent">Your computer is not announcing itself. If you have just
+        turned it on, give it about half a minute.</string>
+    <string name="status_no_network">This phone cannot reach the network, so there is no
+        way to tell what your computer is doing.</string>
+
     <!-- Failures, phrased as what to do next rather than what went wrong -->
     <string name="err_server_offline">Your computer has not announced itself yet. It may not be
         at its unlock prompt, or its announcement may still be propagating, which takes up to a
