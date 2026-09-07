@@ -29,12 +29,16 @@ jobs:
               - 'go.sum'
               - 'scripts/**'
               - 'Justfile'
+              - 'debian/**'
+              - 'contrib/**'
+              - '.github/workflows/build.yml'
             android:
               - 'android/**'
               - 'mobile/**'
               - '*.go'
               - 'go.mod'
               - 'go.sum'
+              - '.github/workflows/build.yml'
 
   build-cli:
     needs: changes
