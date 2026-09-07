@@ -162,8 +162,9 @@ passphrase before it can finish booting. But if it cannot accept inbound connect
 cannot SSH in to provide one. `syncthing-socket` inverts the direction: **the booting
 machine dials out** and you hand it the passphrase from your laptop.
 
-- On the booting machine, a cryptsetup keyscript runs `syncthing-socket client` from inside
-  the initramfs. Whatever it prints becomes the LUKS key.
+- On the booting machine, an initramfs `local-top` script runs `syncthing-socket client`
+  and writes the result into the same passfifo that cryptsetup's own prompt reads from. It
+  does not replace that prompt.
 - On your laptop, you pipe the passphrase into `syncthing-socket server` when you want the
   machine to come up.
 
@@ -176,11 +177,22 @@ Like Clevis, it hooks the initramfs without replacing cryptsetup's passphrase pr
 console entry, `cryptroot-unlock`, Clevis/Tang and TPM agents all keep working. Whichever
 key arrives first wins, and `/etc/crypttab` needs no changes.
 
-Debian/Ubuntu packages install the pieces:
+Debian/Ubuntu packages install the pieces. Add the signed repository:
 
 ```bash
-sudo apt install ./syncthing-socket_*.deb ./syncthing-socket-luks-initramfs_*.deb
+sudo curl -fsSL https://muelli.github.io/syncthing-socket/deb/KEY.gpg -o /etc/apt/keyrings/syncthing-socket.gpg
 ```
+
+```bash
+echo "deb [signed-by=/etc/apt/keyrings/syncthing-socket.gpg] https://muelli.github.io/syncthing-socket/deb stable main" | sudo tee /etc/apt/sources.list.d/syncthing-socket.list
+```
+
+```bash
+sudo apt update && sudo apt install syncthing-socket syncthing-socket-luks-initramfs
+```
+
+The initramfs package needs **initramfs-tools**. Ubuntu 26.04 and later use dracut
+instead, where it does nothing; see the requirements in the recipe below.
 
 The full recipe (requirements, pairing modes and their threat models, `/etc/crypttab`
 wiring, fallbacks and gotchas) is in

@@ -34,11 +34,14 @@ Description: unlock a LUKS root volume over the Syncthing relay network
  The booting machine only makes outbound connections; the key holder pipes the
  passphrase into "syncthing-socket server" on demand.
  .
- This package installs an initramfs-tools hook, a cryptsetup keyscript, and the
- helpers to store the configuration in the LUKS2 header. It is separate from the
+ This package installs an initramfs-tools hook, local-top and local-bottom scripts,
+ and the helpers to store the configuration in the LUKS2 header. It does not install
+ a cryptsetup keyscript: it races cryptsetup's own prompt through the passfifo, so
+ console entry and cryptroot-unlock keep working. It is separate from the
  syncthing-socket package because it rewrites your boot path and is only useful on
  systems using initramfs-tools.
  .
- Installing it is not enough on its own: the keyscript has to be referenced from
- /etc/crypttab and configured. See
+ Installing it is not enough on its own: the unlock configuration has to be stored
+ in the LUKS2 header with syncthing-luks-bind and the initramfs rebuilt. /etc/crypttab
+ needs no changes. See
  /usr/share/doc/syncthing-socket-luks-initramfs/README.md.

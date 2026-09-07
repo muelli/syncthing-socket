@@ -38,6 +38,19 @@ first wins, and `/etc/crypttab` needs no changes at all.
 ## Requirements
 
 - Debian/Ubuntu with **initramfs-tools** (dracut and mkinitcpio are not supported).
+
+  Check before you start, because getting this wrong fails silently:
+
+  ```bash
+  ls /usr/lib/dracut/modules.d > /dev/null 2>&1 && echo "dracut is installed"
+  ```
+
+  Ubuntu 26.04 and later ship dracut as the real generator while leaving the
+  initramfs-tools packages installed beside it. On those releases `update-initramfs` is a
+  dracut wrapper: it prints "Generating /boot/initrd.img-..." and exits 0, but it ignores
+  everything under `/etc/initramfs-tools/hooks` and `/etc/initramfs-tools/scripts`, so the
+  hook lands on disk and never reaches the initramfs. Nothing reports an error; the machine
+  simply sits at its passphrase prompt at the next boot. There is no dracut module yet.
 - A **separate unencrypted `/boot`**. GRUB never touches the encrypted volume, so
   `GRUB_ENABLE_CRYPTODISK` is not needed.
 - **Networking in the initramfs**, with working DNS; discovery and the relay pool are
@@ -45,6 +58,22 @@ first wins, and `/etc/crypttab` needs no changes at all.
 - `ca-certificates` installed at `update-initramfs` time; the hook copies the trust store in.
 
 ## Install
+
+From the signed repository:
+
+```bash
+sudo curl -fsSL https://muelli.github.io/syncthing-socket/deb/KEY.gpg -o /etc/apt/keyrings/syncthing-socket.gpg
+```
+
+```bash
+echo "deb [signed-by=/etc/apt/keyrings/syncthing-socket.gpg] https://muelli.github.io/syncthing-socket/deb stable main" | sudo tee /etc/apt/sources.list.d/syncthing-socket.list
+```
+
+```bash
+sudo apt update && sudo apt install syncthing-socket syncthing-socket-luks-initramfs
+```
+
+Or from downloaded files:
 
 ```bash
 sudo apt install ./syncthing-socket_*.deb ./syncthing-socket-luks-initramfs_*.deb
