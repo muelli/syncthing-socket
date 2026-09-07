@@ -11,8 +11,12 @@ name: Publish distribution site
 # history where they could never be pruned again.
 
 on:
-  release:
-    types: [published]
+  # Not "release: published". A release created by a workflow using GITHUB_TOKEN does
+  # not trigger further workflows, by design, so that trigger never fired and the site
+  # had to be dispatched by hand. workflow_run fires regardless of who started the run.
+  workflow_run:
+    workflows: ["Build and Upload Artifacts"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       releases:
@@ -36,6 +40,12 @@ env:
 jobs:
   publish:
     name: Build and deploy the site
+    # Only for a tag build that actually succeeded: publishing from a failed or
+    # branch build would push a half-assembled site over a working one.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     environment:
       name: github-pages
