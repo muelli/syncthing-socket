@@ -212,8 +212,20 @@ screen. Do not photograph it, screenshot it, or put it in a chat.
 
 ### 2. Pair the phone
 
-Install the app, open it, tap **Scan**, point it at the QR code. The passphrase, the seed
-and the machine's Device ID are stored in the app; nothing is sent anywhere yet.
+Install the app and open it. A phone with no pairing shows only the setup screen, so
+there is no unlock button to press by accident. Tap **Scan the QR code** and point the
+camera at the terminal. If the camera is unavailable or the QR code will not read, tap
+**Enter the details as text** and type the three values `syncthing-luks-setup` printed
+underneath the QR code.
+
+The passphrase, the seed and the machine's Device ID are stored under a key that requires
+your screen lock or a strong biometric, so the phone asks you to confirm before it saves
+them. Nothing is sent anywhere yet.
+
+The app has no way to delete a pairing or to hold a second one; clear its app data in
+Android's settings to start over. To unlock a second machine, install a second copy of the
+app with its own application id, as described under *Unlocking more than one computer* in
+the top-level [README](../../README.md).
 
 ### 3. Unlock
 

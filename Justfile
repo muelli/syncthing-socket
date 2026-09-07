@@ -44,3 +44,12 @@ test:
 # Simulate GitHub CI locally using act and podman
 ci:
     DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock ~/.local/bin/act
+
+# Build the Android app. Pass an application id and label to produce a variant that
+# installs alongside the default one, for unlocking a second computer:
+#   just android-apk com.github.muelli.syncthingsocket.office "LUKS Office"
+android-apk id="com.github.muelli.syncthingsocket" label="Syncthing LUKS":
+    cd android && ./gradlew assembleRelease \
+        -PsyncthingSocket.appId="{{id}}" \
+        -PsyncthingSocket.appLabel="{{label}}"
+    @echo "APK: android/app/build/outputs/apk/release/"

@@ -188,6 +188,36 @@ wiring, fallbacks and gotchas) is in
 
 ---
 
+## Unlocking from an Android Phone
+
+There is an Android app that does the laptop's half of the unlock, so the machine can boot
+with nothing but a phone in your pocket. Install it from the project's F-Droid repository:
+
+    https://muelli.github.io/syncthing-socket/fdroid/repo
+
+Run `syncthing-luks-setup` on the machine, scan the QR code it prints (or type the same
+three values into the app), and from then on the phone offers a single **Unlock** button,
+guarded by your screen lock or fingerprint.
+
+### Unlocking more than one computer
+
+The app holds exactly one pairing. That is deliberate: a profile picker is one more thing
+to get wrong at 3am in front of a machine that will not boot. To unlock a second computer,
+build a second copy of the app with its own application id. Android treats it as a
+separate app, so both install side by side with their own icons and their own stored
+pairing.
+
+```bash
+just android-apk com.github.muelli.syncthingsocket.office "LUKS Office"
+```
+
+The id must be unique per install and cannot be changed afterwards without reinstalling.
+The label is what appears under the icon, so make it name the machine. Everything else,
+including the signing key, is unchanged, so these variants update from the same repository
+if you publish them.
+
+---
+
 ## Advanced: Port Forwarding and Reverse Proxies
 
 You can front your local SSH daemon (or any other TCP service) using `syncthing-socket`. This allows you to securely SSH into a machine behind a NAT.

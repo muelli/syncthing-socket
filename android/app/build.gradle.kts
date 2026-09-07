@@ -10,7 +10,22 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.github.muelli.syncthingsocket"
+        // One app instance unlocks one computer. To unlock a second computer, build a
+        // second APK with its own application id, which Android then installs alongside
+        // the first instead of replacing it. See "Unlocking more than one computer" in
+        // README.md. `namespace` deliberately stays fixed: it names the code, not the
+        // installed app.
+        applicationId = (findProperty("syncthingSocket.appId") as String?)
+            ?: "com.github.muelli.syncthingsocket"
+
+        // The launcher label lives here rather than in strings.xml so a variant build can
+        // override it, which is what makes two installed instances tellable apart.
+        resValue(
+            "string",
+            "app_name",
+            (findProperty("syncthingSocket.appLabel") as String?) ?: "Syncthing LUKS"
+        )
+
         minSdk = 26
         targetSdk = 34
         
