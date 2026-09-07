@@ -25,6 +25,11 @@ if [ -z "$DEVICE" ]; then
     exit 1
 fi
 
+if ! cryptsetup isLuks --type luks2 "$DEVICE"; then
+    echo "Error: $DEVICE is not a LUKS2 device." >&2
+    exit 1
+fi
+
 printf 'Enter the LUKS passphrase for %s (will be hidden): ' "$DEVICE"
 read -rs PASSPHRASE
 echo ""
@@ -32,6 +37,19 @@ if [ -z "$PASSPHRASE" ]; then
     echo "Error: empty passphrase." >&2
     exit 1
 fi
+
+# Check it actually opens the device before writing it into a QR code. Without this a
+# typo is enrolled silently and only surfaces at the next boot, as
+# "No key available with this passphrase" from an initramfs, which is a poor place to
+# discover it and gives no hint that the QR code is the thing at fault.
+if ! printf %s "$PASSPHRASE" | cryptsetup open --test-passphrase --key-file=- "$DEVICE"; then
+    echo "" >&2
+    echo "Error: that passphrase does not unlock $DEVICE." >&2
+    echo "Nothing has been changed. Enrolling it would produce a QR code that cannot" >&2
+    echo "unlock this machine, and the failure would only appear at the next boot." >&2
+    exit 1
+fi
+echo "Passphrase verified against $DEVICE."
 
 UNLOCK_SEED=$(head -c 32 /dev/urandom | base64)
 

@@ -110,7 +110,7 @@ setup_networking() {
 unlock_loop() {
 	PATH="/sbin:/usr/sbin:/bin:/usr/bin"
 	networking_done=0
-	last_source=""
+	answered_pid=""
 
 	while true; do
 		# Wait for an askpass to be waiting on a passfifo.
@@ -128,11 +128,17 @@ unlock_loop() {
 		source=$(tr '\0' '\n' < /proc/"$pid"/environ 2>/dev/null |
 			sed -n 's/^CRYPTTAB_SOURCE=//p')
 		[ -n "$source" ] || { sleep 2; continue; }
-		[ "$source" = "$last_source" ] && { sleep 2; continue; }
+
+		# Only skip the prompt we already answered. cryptsetup re-runs askpass when a
+		# key is rejected, so a *new* askpass for the same device means our last answer
+		# was wrong and we should try again. Keying this on the device instead meant one
+		# wrong passphrase silenced the network path for the rest of the boot, leaving
+		# the machine sitting at a prompt with nothing listening.
+		[ "$pid" = "$answered_pid" ] && { sleep 2; continue; }
 
 		if ! read_config "$source"; then
 			# Nothing configured for this device; leave it to askpass entirely.
-			last_source="$source"
+			answered_pid="$pid"
 			continue
 		fi
 
@@ -167,8 +173,9 @@ unlock_loop() {
 		if [ -n "$KEY" ]; then
 			printf %s "$KEY" > "$fifo"
 			echo "syncthing-socket: passphrase delivered for $source" > /dev/console
-			last_source="$source"
-			# Give cryptsetup time to consume it and move on to the next device.
+			answered_pid="$pid"
+			# Let cryptsetup consume it. If the key was wrong it will start a new
+			# askpass, which the check above sees as a fresh prompt to answer.
 			sleep 2
 		else
 			# The key holder is usually just not listening yet. Retry; a fresh
