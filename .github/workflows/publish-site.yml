@@ -123,7 +123,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p site/fdroid/repo
-          find release-assets -name '*.apk' -exec cp {} site/fdroid/repo/ \;
+          # Every release names its APK asset "syncthing-socket.apk", so copying them
+          # into one directory left exactly one file and the repository advertised a
+          # single version no matter how many releases were collected. fdroid update
+          # reads the version out of the APK itself, so the name only has to be unique.
+          for dir in release-assets/*/; do
+            tag=$(basename "$dir")
+            for apk in "$dir"*.apk; do
+              [ -e "$apk" ] || continue
+              base=$(basename "$apk" .apk)
+              cp "$apk" "site/fdroid/repo/${base}-${tag}.apk"
+            done
+          done
+          ls -la site/fdroid/repo/
 
           openssl pkcs12 -export -out site/fdroid/keystore.p12 \
             -inkey key_fdroid.pem -in cert_fdroid.pem \
