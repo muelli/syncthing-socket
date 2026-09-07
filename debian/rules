@@ -1,0 +1,86 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+# Vendored dependencies, no network, reproducible-ish output.
+export GOFLAGS = -mod=vendor -trimpath
+export CGO_ENABLED = 0
+export GOCACHE = $(CURDIR)/.gocache
+export VERSION = $(shell dpkg-parsechangelog -SVersion)
+
+DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+
+# Debian and Go agree on the names we ship. Map explicitly anyway, so an unexpected
+# architecture fails loudly here rather than silently building for the wrong one.
+GOARCH_amd64 = amd64
+GOARCH_arm64 = arm64
+GOARCH_HOST = $(GOARCH_$(DEB_HOST_ARCH))
+GOARCH_BUILD = $(GOARCH_$(DEB_BUILD_ARCH))
+
+# -s -w strips the symbol table and DWARF at link time. Doing it here rather than with
+# dh_strip means no cross binutils is needed to build for another architecture.
+LDFLAGS = -s -w -X syncthing-socket.Version=$(VERSION)
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	@if [ -z "$(GOARCH_HOST)" ]; then \
+		echo "No GOARCH mapping for Debian architecture $(DEB_HOST_ARCH)." >&2; \
+		exit 1; \
+	fi
+	GOARCH=$(GOARCH_HOST) go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
+		-o syncthing-socket ./cmd/syncthing-socket
+	# The shell completions are produced by running the binary, which is impossible when
+	# cross-building. Build a throwaway host-architecture copy just for that.
+	GOARCH=$(GOARCH_BUILD) go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
+		-o syncthing-socket-hostarch ./cmd/syncthing-socket
+	./syncthing-socket-hostarch completion bash > debian/completion.bash
+	./syncthing-socket-hostarch completion zsh  > debian/completion.zsh
+	./syncthing-socket-hostarch completion fish > debian/completion.fish
+
+override_dh_auto_test:
+	# The test suite spawns real relay and discovery traffic, and cannot run at all when
+	# cross-building. CI runs it separately, before the packages are built.
+
+override_dh_auto_install:
+	install -Dm755 syncthing-socket debian/tmp/usr/bin/syncthing-socket
+	install -Dm644 syncthing-socket.1 debian/tmp/usr/share/man/man1/syncthing-socket.1
+	install -Dm644 debian/completion.bash debian/tmp/usr/share/bash-completion/completions/syncthing-socket
+	install -Dm644 debian/completion.zsh debian/tmp/usr/share/zsh/site-functions/_syncthing-socket
+	install -Dm644 debian/completion.fish debian/tmp/usr/share/fish/vendor_completions.d/syncthing-socket.fish
+	sed -e 's|@PREFIX@|/usr|g' contrib/syncthing-socket.service.in \
+		> debian/syncthing-socket.service.generated
+	install -Dm644 debian/syncthing-socket.service.generated \
+		debian/tmp/usr/lib/systemd/system/syncthing-socket.service
+	# LUKS integration, shipped in its own binary package.
+	install -Dm755 contrib/initramfs-luks/syncthing-socket-hook \
+		debian/tmp/etc/initramfs-tools/hooks/syncthing-socket
+	install -Dm755 contrib/initramfs-luks/syncthing-socket-initramfs-top \
+		debian/tmp/etc/initramfs-tools/scripts/local-top/syncthing-socket
+	install -Dm755 contrib/initramfs-luks/syncthing-socket-initramfs-bottom \
+		debian/tmp/etc/initramfs-tools/scripts/local-bottom/syncthing-socket
+	install -Dm755 contrib/initramfs-luks/syncthing-luks-bind \
+		debian/tmp/usr/sbin/syncthing-luks-bind
+	install -Dm755 contrib/initramfs-luks/syncthing-luks-setup \
+		debian/tmp/usr/sbin/syncthing-luks-setup
+
+# CGO_ENABLED=0 produces a single static binary, so none of the shared-library machinery
+# applies. Skipping it also keeps cross-building free of a target binutils: dh_strip,
+# dh_shlibdeps and dh_makeshlibs all shell out to <triplet>-strip or -objdump.
+# dh_dwz is separately impossible, as Go emits compressed DWARF it cannot process.
+override_dh_dwz:
+
+override_dh_shlibdeps:
+
+override_dh_makeshlibs:
+
+# Already stripped at link time; running the target architecture's strip would require a
+# cross binutils for no benefit.
+override_dh_strip:
+
+override_dh_auto_clean:
+	rm -f syncthing-socket syncthing-socket-hostarch
+	rm -f debian/completion.bash debian/completion.zsh debian/completion.fish
+	rm -f debian/syncthing-socket.service.generated
+	rm -rf $(CURDIR)/.gocache

@@ -1,0 +1,6 @@
+syncthing-socket (0.0.115-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+  * Split the initramfs LUKS integration into syncthing-socket-luks-initramfs.
+
+ -- Tobias Mueller <tobias.mueller@sitasys.com>  Sun, 06 Sep 2026 11:20:27 -0700

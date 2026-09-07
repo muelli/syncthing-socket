@@ -1,0 +1,3 @@
+# Go binaries built with CGO_ENABLED=0 are static by design; this is how the
+# upstream release artifacts are produced too.
+syncthing-socket: statically-linked-binary [usr/bin/syncthing-socket]

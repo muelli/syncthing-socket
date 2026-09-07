@@ -1,0 +1,44 @@
+Source: syncthing-socket
+Section: net
+Priority: optional
+Maintainer: Tobias Mueller <tobias.mueller@sitasys.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/muelli/syncthing-socket
+Rules-Requires-Root: no
+
+Package: syncthing-socket
+Architecture: any
+Depends: ${misc:Depends}
+Description: netcat-like tunnel over the Syncthing relay network
+ syncthing-socket connects two hosts that cannot accept inbound connections, by
+ meeting on the public Syncthing relay network and Syncthing's global discovery.
+ Peers are identified by Syncthing Device IDs, traffic is TLS 1.3 end to end, and
+ an ICE/WebRTC upgrade replaces the relay with a direct peer-to-peer link when the
+ network allows it.
+ .
+ It offers a raw stdin/stdout pipe, a PTY shell, single-command execution, port
+ forwarding and reverse forwarding, and a SOCKS5 proxy.
+
+Package: syncthing-socket-luks-initramfs
+Architecture: all
+Depends: ${misc:Depends},
+         syncthing-socket,
+         cryptsetup-initramfs,
+         initramfs-tools | initramfs-tools-core,
+         ca-certificates
+Recommends: dropbear-initramfs, qrencode
+Description: unlock a LUKS root volume over the Syncthing relay network
+ Fetches a LUKS passphrase during early boot over the Syncthing relay network, so
+ a machine that cannot accept inbound connections can still be unlocked remotely.
+ The booting machine only makes outbound connections; the key holder pipes the
+ passphrase into "syncthing-socket server" on demand.
+ .
+ This package installs an initramfs-tools hook, a cryptsetup keyscript, and the
+ helpers to store the configuration in the LUKS2 header. It is separate from the
+ syncthing-socket package because it rewrites your boot path and is only useful on
+ systems using initramfs-tools.
+ .
+ Installing it is not enough on its own: the keyscript has to be referenced from
+ /etc/crypttab and configured. See
+ /usr/share/doc/syncthing-socket-luks-initramfs/README.md.

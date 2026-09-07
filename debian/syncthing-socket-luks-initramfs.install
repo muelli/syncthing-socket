@@ -1,0 +1,5 @@
+etc/initramfs-tools/hooks/syncthing-socket
+etc/initramfs-tools/scripts/local-top/syncthing-socket
+etc/initramfs-tools/scripts/local-bottom/syncthing-socket
+usr/sbin/syncthing-luks-bind
+usr/sbin/syncthing-luks-setup

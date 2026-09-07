@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+	if command -v update-initramfs >/dev/null 2>&1; then
+		update-initramfs -u || true
+	fi
+	# No /etc/crypttab change is needed, because the unlock races cryptsetup's own askpass
+	# rather than replacing it. A seed does have to be configured somewhere.
+	if [ ! -r /etc/syncthing-socket/luks.conf ]; then
+		echo "syncthing-socket-luks-initramfs: no seed configured yet." >&2
+		echo "  Either run syncthing-luks-bind to store one in the LUKS2 header, or" >&2
+		echo "  create /etc/syncthing-socket/luks.conf, then rerun update-initramfs -u." >&2
+		echo "  See /usr/share/doc/syncthing-socket-luks-initramfs/." >&2
+	fi
+fi
+
+#DEBHELPER#
