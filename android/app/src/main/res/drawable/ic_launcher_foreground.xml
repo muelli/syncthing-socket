@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The project mark from assets/logo.svg: three connected nodes, a wire, and a power
+  plug. Laid out for a square viewport rather than the logo's 2:1 landscape, so the
+  plug sits below and right of the triangle instead of beside it.
+
+  All geometry stays inside the central 66dp of the 108dp viewport, the adaptive icon
+  safe zone, so no launcher mask can clip any of it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- nodes triangle -->
+    <path
+        android:pathData="M 40 36 L 28 58 L 52 58 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineJoin="round" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 40 36 m -6 0 a 6 6 0 1 0 12 0 a 6 6 0 1 0 -12 0" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 28 58 m -6 0 a 6 6 0 1 0 12 0 a 6 6 0 1 0 -12 0" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 52 58 m -6 0 a 6 6 0 1 0 12 0 a 6 6 0 1 0 -12 0" />
+
+    <!-- wire from the right node to the plug -->
+    <path
+        android:pathData="M 52 58 Q 64 60 68 69"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+
+    <!-- plug body, collar, prongs -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 66.5 64 h 8 a 2.5 2.5 0 0 1 2.5 2.5 v 8 a 2.5 2.5 0 0 1 -2.5 2.5 h -8 a 2.5 2.5 0 0 1 -2.5 -2.5 v -8 a 2.5 2.5 0 0 1 2.5 -2.5 z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 78.2 66 h 1.1 a 1.2 1.2 0 0 1 1.2 1.2 v 6.6 a 1.2 1.2 0 0 1 -1.2 1.2 h -1.1 a 1.2 1.2 0 0 1 -1.2 -1.2 v -6.6 a 1.2 1.2 0 0 1 1.2 -1.2 z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 81.5 67 h 4 a 1 1 0 0 1 1 1 v 0.4 a 1 1 0 0 1 -1 1 h -4 a 1 1 0 0 1 -1 -1 v -0.4 a 1 1 0 0 1 1 -1 z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M 81.5 71.6 h 4 a 1 1 0 0 1 1 1 v 0.4 a 1 1 0 0 1 -1 1 h -4 a 1 1 0 0 1 -1 -1 v -0.4 a 1 1 0 0 1 1 -1 z" />
+</vector>
