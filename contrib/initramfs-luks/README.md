@@ -223,9 +223,9 @@ your screen lock or a strong biometric, so the phone asks you to confirm before 
 them. Nothing is sent anywhere yet.
 
 The app has no way to delete a pairing or to hold a second one; clear its app data in
-Android's settings to start over. To unlock a second machine, install a second copy of the
-app with its own application id, as described under *Unlocking more than one computer* in
-the top-level [README](../../README.md).
+Android's settings to start over, then see *Re-enrolling a phone* below. To unlock a second
+machine, install a second copy of the app with its own application id, as described under
+*Unlocking more than one computer* in the top-level [README](../../README.md).
 
 ### 3. Unlock
 
@@ -245,6 +245,32 @@ cryptsetup: cryptroot: set up successfully
 ```
 
 and carries on booting.
+
+### Re-enrolling a phone
+
+A phone that has lost its pairing (app data cleared, a replacement handset, a reinstall)
+does not need the machine reconfigured. The seed lives in the LUKS2 header, so it can be
+read back and printed again:
+
+```bash
+sudo syncthing-luks-setup --reprint /dev/nvme0n1p3
+```
+
+That asks for the disk passphrase, verifies it, and prints the same QR code and the same
+three values as the original enrolment. Nothing in the header changes, so there is no
+re-bind and no `update-initramfs`, and any other phone still holding this pairing keeps
+working.
+
+If the old phone still works, it can do this itself: **Pair another phone** on its unlock
+screen shows the same code, after it has confirmed your identity. That is the easier route
+when the machine is not currently reachable, which is often exactly when you need it.
+
+Re-run `syncthing-luks-setup` **without** `--reprint` only when you want to rotate, for
+instance because a phone was lost and you want its pairing to stop working. That mints a
+fresh seed, so you must run the `syncthing-luks-bind` line it prints and rebuild the
+initramfs; until you do, the header still names the old phone. Rotating the seed does not
+change the disk passphrase, so if that is what leaked, change it with `cryptsetup
+luksChangeKey` and enrol again afterwards.
 
 ### If it does not unlock
 

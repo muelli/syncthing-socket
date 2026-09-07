@@ -199,6 +199,13 @@ Run `syncthing-luks-setup` on the machine, scan the QR code it prints (or type t
 three values into the app), and from then on the phone offers a single **Unlock** button,
 guarded by your screen lock or fingerprint.
 
+### Re-pairing a phone
+
+The seed lives in the LUKS2 header, so a replacement phone does not need the machine
+reconfigured. `syncthing-luks-setup --reprint <device>` reads the existing pairing back out
+and prints the same QR code; nothing changes, so no re-bind and no initramfs rebuild. A
+phone that still has the pairing can show it itself, under **Pair another phone**.
+
 ### Unlocking more than one computer
 
 The app holds exactly one pairing. That is deliberate: a profile picker is one more thing

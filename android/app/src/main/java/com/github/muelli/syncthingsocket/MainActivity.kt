@@ -3,7 +3,10 @@ package com.github.muelli.syncthingsocket
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -16,6 +19,8 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -34,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -47,10 +54,12 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import mobile.Mobile
 import org.json.JSONObject
@@ -58,7 +67,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /** What the user is doing. The app is only ever in one of these. */
-private enum class Phase { Enroll, ManualEnroll, Scanning, Unlock, KeyLost, NoScreenLock }
+private enum class Phase { Enroll, ManualEnroll, Scanning, Unlock, ShowPairing, KeyLost, NoScreenLock }
 
 /** What the unlock screen is showing. */
 private sealed class UnlockUi {
@@ -155,6 +164,12 @@ class MainActivity : FragmentActivity() {
     private val unlockUi = mutableStateOf<UnlockUi>(UnlockUi.Idle)
     private val notice = mutableStateOf<String?>(null)
 
+    /**
+     * Held only while the pairing is on screen, and cleared on the way out. This is the
+     * one place the passphrase lives outside the encrypted store.
+     */
+    private val shownPairing = mutableStateOf<Pairing?>(null)
+
     private val requestCamera = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -172,6 +187,17 @@ class MainActivity : FragmentActivity() {
         phase.value = startingPhase()
 
         setContent {
+            // The pairing screen puts the LUKS passphrase on the display. Block
+            // screenshots and recents thumbnails for as long as it is up, and only then,
+            // so the rest of the app stays ordinary.
+            LaunchedEffect(phase.value) {
+                if (phase.value == Phase.ShowPairing) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+            }
+
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -199,8 +225,19 @@ class MainActivity : FragmentActivity() {
                             state = unlockUi.value,
                             notice = notice.value,
                             onUnlockClick = { notice.value = null; startUnlock() },
+                            onShowPairingClick = { showPairing() },
                             onFinished = { finish() }
                         )
+
+                        Phase.ShowPairing -> shownPairing.value?.let { pairing ->
+                            ShowPairingScreen(
+                                pairing = pairing,
+                                onBack = {
+                                    shownPairing.value = null
+                                    phase.value = Phase.Unlock
+                                }
+                            )
+                        }
 
                         Phase.KeyLost -> MessageScreen(
                             message = stringResource(R.string.key_invalidated),
@@ -289,6 +326,28 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * Shows the stored pairing so a replacement phone can be set up from this one. The
+     * alternative is re-running the setup on the computer, which mints a fresh seed and
+     * therefore invalidates this phone as well.
+     */
+    private fun showPairing() {
+        notice.value = null
+        authenticate(getString(R.string.pairing_auth_reason)) {
+            val pairing = runCatching { store.load() }
+                .getOrElse {
+                    phase.value = Phase.KeyLost
+                    return@authenticate
+                }
+            if (pairing == null) {
+                phase.value = Phase.Enroll
+                return@authenticate
+            }
+            shownPairing.value = pairing
+            phase.value = Phase.ShowPairing
+        }
+    }
+
     private fun startUnlock() {
         unlockUi.value = UnlockUi.Idle
         authenticate(getString(R.string.unlock_auth_reason)) {
@@ -368,6 +427,30 @@ private fun parsePairing(payload: String): Pairing? = runCatching {
         deviceId = json.getString("laptop_device_id")
     )
 }.getOrNull()
+
+/** The inverse of parsePairing, so a phone can hand its pairing to the next one. */
+private fun pairingJson(p: Pairing): String = JSONObject()
+    .put("passphrase", p.passphrase)
+    .put("phone_seed", p.seed)
+    .put("laptop_device_id", p.deviceId)
+    .toString()
+
+/**
+ * Renders a QR code. Drawn one bitmap pixel per module and scaled up without smoothing,
+ * because a blurred QR code is a QR code another phone cannot read.
+ */
+private fun qrBitmap(contents: String): Bitmap {
+    val matrix = QRCodeWriter().encode(contents, BarcodeFormat.QR_CODE, 0, 0)
+    val w = matrix.width
+    val h = matrix.height
+    val pixels = IntArray(w * h)
+    for (y in 0 until h) {
+        for (x in 0 until w) {
+            pixels[y * w + x] = if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE
+        }
+    }
+    return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
+}
 
 /** A Syncthing Device ID is 56 base32 characters, usually written in dash-separated groups. */
 internal fun looksLikeDeviceId(value: String): Boolean {
@@ -535,6 +618,7 @@ private fun UnlockScreen(
     state: UnlockUi,
     notice: String?,
     onUnlockClick: () -> Unit,
+    onShowPairingClick: () -> Unit,
     onFinished: () -> Unit
 ) {
     val unlockFocus = remember { FocusRequester() }
@@ -556,11 +640,15 @@ private fun UnlockScreen(
             .verticalScroll(rememberScrollState())
             .padding(32.dp)
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.U &&
-                    state !is UnlockUi.Working && state !is UnlockUi.Success
+                if (e.type != KeyEventType.KeyDown ||
+                    state is UnlockUi.Working || state is UnlockUi.Success
                 ) {
-                    onUnlockClick(); true
-                } else false
+                    false
+                } else when (e.key) {
+                    Key.U -> { onUnlockClick(); true }
+                    Key.P -> { onShowPairingClick(); true }
+                    else -> false
+                }
             },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -615,6 +703,93 @@ private fun UnlockScreen(
                     style = MaterialTheme.typography.titleLarge
                 )
             }
+        }
+
+        if (state is UnlockUi.Idle) {
+            Spacer(Modifier.height(24.dp))
+            TextButton(onClick = onShowPairingClick) {
+                Text(stringResource(R.string.pairing_show))
+            }
+        }
+    }
+}
+
+/**
+ * Shows the stored pairing as a QR code and as text, so a replacement phone can be paired
+ * from this one. Re-running the setup on the computer works too, but it mints a fresh seed
+ * and so unpairs this phone in the process.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun ShowPairingScreen(pairing: Pairing, onBack: () -> Unit) {
+    val backFocus = remember { FocusRequester() }
+    val qr = remember(pairing) { qrBitmap(pairingJson(pairing)).asImageBitmap() }
+    LaunchedEffect(Unit) { backFocus.requestFocus() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp)
+            .onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown && e.key == Key.Escape) {
+                    onBack(); true
+                } else false
+            },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            stringResource(R.string.pairing_title),
+            style = MaterialTheme.typography.headlineSmall
+        )
+        Spacer(Modifier.height(8.dp))
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                stringResource(R.string.pairing_warning),
+                modifier = Modifier.padding(16.dp),
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+        Image(
+            bitmap = qr,
+            contentDescription = stringResource(R.string.pairing_qr_description),
+            filterQuality = FilterQuality.None,
+            modifier = Modifier
+                .size(280.dp)
+                .background(Color.White)
+                .padding(12.dp)
+        )
+        Spacer(Modifier.height(24.dp))
+        Text(stringResource(R.string.pairing_text_intro), textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        PairingValue(stringResource(R.string.enroll_field_passphrase), pairing.passphrase)
+        PairingValue(stringResource(R.string.enroll_field_seed), pairing.seed)
+        PairingValue(stringResource(R.string.enroll_field_device), pairing.deviceId)
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = onBack,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .focusRequester(backFocus)
+        ) { Text(stringResource(R.string.pairing_done)) }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun PairingValue(label: String, value: String) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        SelectionContainer {
+            Text(value, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

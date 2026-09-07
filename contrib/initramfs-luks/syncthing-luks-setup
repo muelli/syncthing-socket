@@ -10,6 +10,39 @@
 
 set -eu
 
+usage() {
+    cat >&2 <<'USAGE'
+Usage: syncthing-luks-setup [--reprint] <luks-device>
+
+  (no flag)   Enrol a phone: mint a fresh seed and print the pairing. You must then run
+              the syncthing-luks-bind command it prints and rebuild the initramfs.
+  --reprint   Print the pairing this device is already bound to, reading the seed back
+              out of the LUKS2 header. Nothing is changed, so no re-bind and no
+              initramfs rebuild are needed. Use this to pair a replacement phone, or one
+              whose app data was cleared.
+USAGE
+    exit 1
+}
+
+REPRINT=no
+DEVICE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --reprint) REPRINT=yes ;;
+    -h | --help) usage ;;
+    -*)
+        echo "Error: unknown option $1" >&2
+        usage
+        ;;
+    *)
+        [ -z "$DEVICE" ] || usage
+        DEVICE=$1
+        ;;
+    esac
+    shift
+done
+[ -n "$DEVICE" ] || usage
+
 if ! command -v qrencode > /dev/null 2>&1; then
     echo "Error: qrencode is required. Please install it (e.g. apt install qrencode)." >&2
     exit 1
@@ -19,15 +52,58 @@ if ! command -v syncthing-socket > /dev/null 2>&1; then
     exit 1
 fi
 
-DEVICE=${1:-}
-if [ -z "$DEVICE" ]; then
-    echo "Usage: syncthing-luks-setup <luks-device>" >&2
-    exit 1
-fi
-
 if ! cryptsetup isLuks --type luks2 "$DEVICE"; then
     echo "Error: $DEVICE is not a LUKS2 device." >&2
     exit 1
+fi
+
+# Pull one string field out of a token's JSON. cryptsetup pretty-prints its export, so
+# collapse the whitespace first. Every value we read here is base32 or base64, so none of
+# them can contain a quote or a backslash to confuse this.
+json_field() {
+    printf '%s' "$1" | tr -d '\n' |
+        sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+}
+
+# Find this project's token. The id is whatever cryptsetup assigned when it was imported,
+# which is not necessarily 0 once other tokens (Clevis, systemd-tpm2) are in the header.
+find_token() {
+    i=0
+    while [ "$i" -lt 32 ]; do
+        if tok=$(cryptsetup token export --token-id "$i" "$DEVICE" 2> /dev/null); then
+            if [ "$(json_field "$tok" type)" = "syncthing-socket" ]; then
+                printf '%s' "$tok"
+                return 0
+            fi
+        fi
+        i=$((i + 1))
+    done
+    return 1
+}
+
+if [ "$REPRINT" = yes ]; then
+    if ! TOKEN=$(find_token); then
+        echo "Error: $DEVICE carries no syncthing-socket token." >&2
+        echo "This device has not been enrolled yet, so there is nothing to reprint." >&2
+        echo "Run syncthing-luks-setup $DEVICE without --reprint instead." >&2
+        exit 1
+    fi
+    UNLOCK_SEED=$(json_field "$TOKEN" p2p_key_seed)
+    if [ -z "$UNLOCK_SEED" ]; then
+        echo "Error: the syncthing-socket token on $DEVICE has no p2p_key_seed." >&2
+        exit 1
+    fi
+    # The Android app pushes the passphrase, so the machine must be the waiting side. A
+    # "client" binding is the laptop topology and no phone can serve it.
+    ROLE=$(json_field "$TOKEN" unlock_role)
+    if [ "$ROLE" != "server" ]; then
+        echo "Error: $DEVICE is bound with unlock_role=\"$ROLE\", not \"server\"." >&2
+        echo "That is the laptop topology, where this machine dials out to a waiting" >&2
+        echo "key holder. The phone app cannot serve it. Re-enrol without --reprint." >&2
+        exit 1
+    fi
+else
+    UNLOCK_SEED=$(head -c 32 /dev/urandom | base64)
 fi
 
 printf 'Enter the LUKS passphrase for %s (will be hidden): ' "$DEVICE"
@@ -51,8 +127,6 @@ if ! printf %s "$PASSPHRASE" | cryptsetup open --test-passphrase --key-file=- "$
 fi
 echo "Passphrase verified against $DEVICE."
 
-UNLOCK_SEED=$(head -c 32 /dev/urandom | base64)
-
 IDS=$(syncthing-socket id --passphrase "$UNLOCK_SEED")
 MACHINE_DEVICE_ID=$(echo "$IDS" | awk '/^Server ID:/ {print $3}')
 PHONE_DEVICE_ID=$(echo "$IDS" | awk '/^Client ID:/ {print $3}')
@@ -61,6 +135,14 @@ if [ -z "$MACHINE_DEVICE_ID" ] || [ -z "$PHONE_DEVICE_ID" ]; then
     exit 1
 fi
 
+# The passphrase is the only value here that is not base32 or base64, so it is the only
+# one that can carry a quote or a backslash and turn the payload into JSON the app cannot
+# parse. That failure would show up as "not a syncthing-socket pairing code" with no clue
+# that the passphrase was at fault.
+json_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
 # The JSON keys are what the Android app parses. "phone_seed" is the seed the phone derives
 # its client identity from, and "laptop_device_id" is the Device ID it connects to, i.e.
 # this machine's Server ID.
@@ -68,7 +150,7 @@ TMPJSON=$(mktemp)
 trap 'rm -f "$TMPJSON"' EXIT
 chmod 600 "$TMPJSON"
 cat > "$TMPJSON" <<EOF
-{"passphrase":"$PASSPHRASE","phone_seed":"$UNLOCK_SEED","laptop_device_id":"$MACHINE_DEVICE_ID"}
+{"passphrase":"$(json_escape "$PASSPHRASE")","phone_seed":"$UNLOCK_SEED","laptop_device_id":"$MACHINE_DEVICE_ID"}
 EOF
 
 echo ""
@@ -92,8 +174,15 @@ echo ""
 echo "The QR code and the text above both contain your LUKS passphrase in clear text."
 echo "Do not photograph, screenshot or share either of them."
 echo ""
-echo "Now bind the configuration into the LUKS2 header:"
-echo ""
-echo "  syncthing-luks-bind $DEVICE \"$UNLOCK_SEED\" \"$PHONE_DEVICE_ID\" server"
-echo ""
-echo "Then rebuild the initramfs:  update-initramfs -u -k all"
+
+if [ "$REPRINT" = yes ]; then
+    echo "This is the pairing $DEVICE is already bound to. Nothing was changed, so there"
+    echo "is no need to re-bind or to rebuild the initramfs. Any phone still holding this"
+    echo "pairing keeps working."
+else
+    echo "Now bind the configuration into the LUKS2 header:"
+    echo ""
+    echo "  syncthing-luks-bind $DEVICE \"$UNLOCK_SEED\" \"$PHONE_DEVICE_ID\" server"
+    echo ""
+    echo "Then rebuild the initramfs:  update-initramfs -u -k all"
+fi

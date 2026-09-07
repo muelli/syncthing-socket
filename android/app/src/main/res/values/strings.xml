@@ -48,6 +48,17 @@
     <string name="err_unknown">The unlock did not complete.</string>
     <string name="err_details">Details: %1$s</string>
 
+    <!-- Showing the stored pairing, so a replacement phone can be set up from this one -->
+    <string name="pairing_show">Pair another phone</string>
+    <string name="pairing_title">Your pairing</string>
+    <string name="pairing_auth_reason">Confirm your identity to show the pairing</string>
+    <string name="pairing_warning">This screen shows your disk passphrase in clear text.
+        Anyone who reads it, or photographs the code, can unlock that computer.</string>
+    <string name="pairing_qr_description">Pairing QR code</string>
+    <string name="pairing_text_intro">Scan the code with the other phone, or enter these
+        values there as text.</string>
+    <string name="pairing_done">Done</string>
+
     <!-- Authentication and key state -->
     <string name="auth_unavailable">This phone has no screen lock set up. The passphrase is
         stored under a key that requires one, so set a PIN, pattern, password or biometric in
