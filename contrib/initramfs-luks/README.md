@@ -176,6 +176,80 @@ syncthing-socket: unlock attempt 1 ...
 cryptsetup: cryptroot: set up successfully
 ```
 
+## Unlocking from an Android phone
+
+The phone dials out, so the machine takes the `server` role: it announces from its
+initramfs and waits, and the phone pushes the passphrase when you tap unlock. That suits
+Android, which cannot reliably hold a listening service open in the background while a
+machine boots.
+
+Both identities come from one seed. The machine uses `seed + "server"`, the phone uses
+`seed + "client"`, so a single QR code carries everything the phone needs.
+
+### 1. Enrol, on the machine
+
+```bash
+sudo syncthing-luks-setup /dev/nvme0n1p3
+```
+
+It asks for the LUKS passphrase, generates a seed, derives both Device IDs, prints a QR
+code, and prints the exact `syncthing-luks-bind` command to run next. That command stores
+the seed, the phone's Device ID and `unlock_role: server` in the LUKS2 header:
+
+```bash
+sudo syncthing-luks-bind /dev/nvme0n1p3 "<seed>" "<phone-device-id>" server
+sudo update-initramfs -u -k all
+```
+
+Check what was stored:
+
+```bash
+sudo cryptsetup token export --token-id 0 /dev/nvme0n1p3
+```
+
+**The QR code contains your LUKS passphrase in clear text.** Scan it directly off the
+screen. Do not photograph it, screenshot it, or put it in a chat.
+
+### 2. Pair the phone
+
+Install the app, open it, tap **Scan**, point it at the QR code. The passphrase, the seed
+and the machine's Device ID are stored in the app; nothing is sent anywhere yet.
+
+### 3. Unlock
+
+Reboot the machine. It brings up networking in the initramfs, announces itself, and waits,
+printing to the console:
+
+```
+syncthing-socket: requesting the passphrase for /dev/nvme0n1p3
+```
+
+Open the app, tap **Unlock**, confirm with your fingerprint or face. The phone connects
+over the Syncthing relay network and pushes the passphrase. The machine prints:
+
+```
+syncthing-socket: passphrase delivered for /dev/nvme0n1p3
+cryptsetup: cryptroot: set up successfully
+```
+
+and carries on booting.
+
+### If it does not unlock
+
+The machine keeps retrying, so you can take your time. In order of likelihood:
+
+- **The machine has not announced yet.** A fresh announcement takes 30 to 45 seconds to
+  become visible in global discovery. Watch the console for the attempt counter.
+- **No network in the initramfs.** The console shows the DHCP lease. No lease means no
+  unlock; see *Gotchas* about the initramfs getting a different lease from the booted
+  system.
+- **Wrong pairing.** Confirm the phone's Device ID matches what the header authorises:
+  `syncthing-socket id --passphrase "<seed>"` prints the Client ID, which must equal
+  `key_bearing_device_id` in the token.
+
+You always have the fallbacks below: the console prompt and `cryptroot-unlock` both keep
+working, because this integration races cryptsetup's own prompt rather than replacing it.
+
 ## Keep a fallback
 
 Install `dropbear-initramfs` and put a key in `/etc/dropbear/initramfs/authorized_keys`. If

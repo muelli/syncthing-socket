@@ -1,0 +1,8 @@
+Initial F-Droid release.
+
+- Unlock your LUKS-encrypted laptop remotely over the Syncthing relay
+  network with a single biometric tap.
+- Passphrase is held in EncryptedSharedPreferences, under a key kept in
+  the Android Keystore.
+- Replaced Google ML Kit with FLOSS ZXing for QR scanning.
+- No tracking, no analytics, fully open source (AGPLv3+).
