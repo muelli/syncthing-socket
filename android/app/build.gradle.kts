@@ -44,14 +44,31 @@ android {
                 .toIntOrNull()
         } else null
 
-        val appVersionCode = gitVersionCount ?: fileVersionCount ?: 1
+        // Deliberately no numeric default. versionCode is how Android and F-Droid decide
+        // whether a build is an update; shipping 1 because git happened to be absent is
+        // worse than not building at all, and it is silent. F-Droid builds from the source
+        // tarball, which carries VERSION, so this only fires for an unpacked archive with
+        // neither git nor VERSION, where the right answer is to say so.
+        val appVersionCode = gitVersionCount ?: fileVersionCount ?: error(
+            "Cannot determine versionCode: no git history and no VERSION file at the " +
+                "repository root. Write the build's version number to VERSION, for " +
+                "example: sh scripts/version.sh > VERSION"
+        )
 
-        val gitVersionName = try {
+        // isIgnoreExitValue means a failed script yields an empty string rather than an
+        // exception, so the catch alone is not enough: an APK shipped with an empty
+        // versionName was what this produced before the fallback was added.
+        val scriptVersionName = try {
             providers.exec {
-                commandLine("sh", "../../scripts/version.sh")
+                commandLine("sh", "scripts/version.sh")
+                workingDir = repoRoot
                 isIgnoreExitValue = true
             }.standardOutput.asText.get().trim()
-        } catch (e: Exception) { "unknown" }
+        } catch (e: Exception) { "" }
+
+        val gitVersionName = scriptVersionName.ifBlank {
+            if (versionFile.exists()) versionFile.readText().trim() else ""
+        }.ifBlank { appVersionCode.toString() }
 
         versionCode = appVersionCode
         versionName = gitVersionName
