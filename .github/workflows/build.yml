@@ -70,6 +70,7 @@ jobs:
           export CGO_ENABLED=0
           
           GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-linux-amd64 ./cmd/syncthing-socket
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-linux-arm64 ./cmd/syncthing-socket
           GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-amd64 ./cmd/syncthing-socket
           GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-arm64 ./cmd/syncthing-socket
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-windows-amd64.exe ./cmd/syncthing-socket
