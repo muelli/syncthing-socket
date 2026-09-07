@@ -241,9 +241,9 @@ jobs:
         run: |
           set -euo pipefail
           # Compute the version before deleting vendor/. gomobile bind cannot run with a
-          # vendor directory present, but removing it makes the working tree dirty, and
-          # scripts/version.sh appends "-dirty" to what it reports, which is how v136
-          # shipped labelled "v136-dirty". version.sh honours $VERSION when set.
+          # vendor directory present, but removing it dirties the working tree, and
+          # version.sh would then report "-dirty", which is how v136 shipped labelled
+          # "v136-dirty". version.sh honours $VERSION when set.
           VERSION=$(sh ../scripts/version.sh)
           export VERSION
           echo "building Android versionName: $VERSION"
