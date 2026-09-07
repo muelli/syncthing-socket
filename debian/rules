@@ -60,10 +60,19 @@ override_dh_auto_install:
 		debian/tmp/etc/initramfs-tools/scripts/local-top/syncthing-socket
 	install -Dm755 contrib/initramfs-luks/syncthing-socket-initramfs-bottom \
 		debian/tmp/etc/initramfs-tools/scripts/local-bottom/syncthing-socket
+	# Generator-agnostic helpers: they only write LUKS2 tokens and print pairing codes,
+	# so they ship in the base package and serve both integrations.
 	install -Dm755 contrib/initramfs-luks/syncthing-luks-bind \
 		debian/tmp/usr/sbin/syncthing-luks-bind
 	install -Dm755 contrib/initramfs-luks/syncthing-luks-setup \
 		debian/tmp/usr/sbin/syncthing-luks-setup
+	# The dracut integration, for Ubuntu 26.04 and later.
+	install -Dm755 contrib/dracut-luks/90syncthing-socket/module-setup.sh \
+		debian/tmp/usr/lib/dracut/modules.d/90syncthing-socket/module-setup.sh
+	install -Dm755 contrib/dracut-luks/90syncthing-socket/syncthing-socket-start.sh \
+		debian/tmp/usr/lib/dracut/modules.d/90syncthing-socket/syncthing-socket-start.sh
+	install -Dm755 contrib/dracut-luks/90syncthing-socket/syncthing-socket-stop.sh \
+		debian/tmp/usr/lib/dracut/modules.d/90syncthing-socket/syncthing-socket-stop.sh
 
 # CGO_ENABLED=0 produces a single static binary, so none of the shared-library machinery
 # applies. Skipping it also keeps cross-building free of a target binutils: dh_strip,

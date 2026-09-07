@@ -406,7 +406,23 @@ func Execute() {
 		},
 	}
 
-	rootCmd.AddCommand(serverCmd, clientCmd, idCmd, installServiceCmd)
+	// Boot plumbing, not a user command: the dracut module runs it inside the initramfs.
+	// Hidden so it does not clutter --help or the shell completions.
+	luksAgentCmd := &cobra.Command{
+		Use:    "luks-agent",
+		Short:  "Answer systemd password requests for a LUKS volume (initramfs use)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			setupLogging("info", "text")
+			if err := runLUKSAgent(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		},
+	}
+
+	rootCmd.AddCommand(serverCmd, clientCmd, idCmd, installServiceCmd, luksAgentCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

@@ -1,4 +1,6 @@
 usr/bin/syncthing-socket
+usr/sbin/syncthing-luks-bind
+usr/sbin/syncthing-luks-setup
 usr/share/man/man1/syncthing-socket.1
 usr/share/bash-completion/completions/syncthing-socket
 usr/share/zsh/site-functions/_syncthing-socket

@@ -37,25 +37,30 @@ first wins, and `/etc/crypttab` needs no changes at all.
 
 ## Requirements
 
-- Debian/Ubuntu with **initramfs-tools** (dracut and mkinitcpio are not supported).
-
-  Check before you start, because getting this wrong fails silently:
+- Debian/Ubuntu with either **initramfs-tools** or **dracut**. mkinitcpio is not
+  supported. **Pick the right package**, because installing the wrong one fails silently:
 
   ```bash
-  ls /usr/lib/dracut/modules.d > /dev/null 2>&1 && echo "dracut is installed"
+  dpkg -S /usr/sbin/update-initramfs
   ```
 
-  Ubuntu 26.04 and later ship dracut as the real generator while leaving the
-  initramfs-tools packages installed beside it. On those releases `update-initramfs` is a
-  dracut wrapper: it prints "Generating /boot/initrd.img-..." and exits 0, but it ignores
-  everything under `/etc/initramfs-tools/hooks` and `/etc/initramfs-tools/scripts`, so the
-  hook lands on disk and never reaches the initramfs. Nothing reports an error; the machine
-  simply sits at its passphrase prompt at the next boot. There is no dracut module yet.
+  `initramfs-tools` means `syncthing-socket-luks-initramfs`; `dracut` means
+  `syncthing-socket-luks-dracut`. Ubuntu 26.04 and later are dracut, and they leave the
+  initramfs-tools packages installed beside it, which is what makes the mistake so easy.
+  On those releases `update-initramfs` is a dracut wrapper: it prints "Generating
+  /boot/initrd.img-...", exits 0, and ignores everything under `/etc/initramfs-tools`. The
+  hook lands on disk, nothing reports an error, and the machine sits at its passphrase
+  prompt at the next boot.
+
+  The pairing, `syncthing-luks-bind`, the LUKS2 token, `/etc/crypttab` and the threat
+  models are the same either way. What differs is the package you install, how networking
+  is configured, the command that rebuilds the initramfs, how you turn up the logging, and
+  the delivery mechanism itself. Each of those says so where it comes up below.
 - A **separate unencrypted `/boot`**. GRUB never touches the encrypted volume, so
   `GRUB_ENABLE_CRYPTODISK` is not needed.
 - **Networking in the initramfs**, with working DNS; discovery and the relay pool are
   reached over HTTPS.
-- `ca-certificates` installed at `update-initramfs` time; the hook copies the trust store in.
+- `ca-certificates` installed when the initramfs is built; the trust store is copied in.
 
 ## Install
 
@@ -73,14 +78,18 @@ echo "deb [signed-by=/etc/apt/keyrings/syncthing-socket.gpg] https://muelli.gith
 sudo apt update && sudo apt install syncthing-socket syncthing-socket-luks-initramfs
 ```
 
+On dracut systems, Ubuntu 26.04 and later, install `syncthing-socket-luks-dracut` in place
+of `syncthing-socket-luks-initramfs`. Nothing else on this page changes.
+
 Or from downloaded files:
 
 ```bash
 sudo apt install ./syncthing-socket_*.deb ./syncthing-socket-luks-initramfs_*.deb
 ```
 
-Or, from a checkout, `just install && sudo just install-contrib`. (`just install` on its own
-deliberately skips the initramfs pieces; they rewrite your boot path.)
+Or, from a checkout, `just install && sudo just install-contrib`, or
+`just install && sudo just install-contrib-dracut` on a dracut system. (`just install` on
+its own deliberately skips the initramfs pieces; they rewrite your boot path.)
 
 Enable networking in the initramfs, in `/etc/initramfs-tools/initramfs.conf`:
 
@@ -95,6 +104,14 @@ lease anyway. Set it on the kernel command line instead of `IP=dhcp`:
 ```
 ip=192.0.2.10::192.0.2.1:255.255.255.0::enp1s0:off
 ```
+
+**On dracut** there is nothing to enable: the module writes `rd.neednet=1` into the
+initramfs itself, and DHCP on every interface is already the default, so the network is up
+and waited for without any configuration. The same `ip=` syntax works on the kernel command
+line for a static address. There is one wrinkle worth knowing: an initramfs built without
+`systemd-resolved`, which is what Ubuntu 26.04 produces, has no `/etc/resolv.conf` and
+nothing that writes one, so the agent reads the nameserver out of systemd-networkd's own
+lease and writes the file itself. It says so on the console when it does.
 
 ## Configure
 
@@ -174,6 +191,20 @@ Just rebuild and reboot:
 
 ```bash
 sudo update-initramfs -u -k all
+```
+
+**On dracut**, rebuild with:
+
+```bash
+sudo dracut --force --regenerate-all
+```
+
+Installing the package does this for you; you only need it by hand after editing the
+configuration. Confirm the module actually made it in, since a module that fails its
+`check()` is skipped silently:
+
+```bash
+sudo lsinitrd /boot/initrd.img-$(uname -r) | grep syncthing-socket
 ```
 
 ## Unlock
@@ -336,6 +367,12 @@ So does typing the passphrase at the console prompt. Both keep working precisely
 this integration leaves cryptsetup's askpass in charge instead of replacing it with a
 keyscript.
 
+**On dracut** the console prompt works the same way and for the same reason, but
+`dropbear-initramfs` and `cryptroot-unlock` are initramfs-tools tools and do not exist
+there. The equivalents are dracut's own `rd.break` shells and `systemd-ask-password`. The
+console prompt is the fallback that is present either way, so it is the one worth testing
+before you rely on any of this.
+
 ## Gotchas
 
 - **The initramfs and the booted system get different DHCP leases.** `dhcpcd` in the
@@ -359,6 +396,11 @@ Raise the client's verbosity by editing `--log-level error` to `--log-level info
 `/etc/initramfs-tools/scripts/local-top/syncthing-socket`; its stderr already goes to
 `/dev/console`. To see the whole boot on a VM, add
 `console=ttyS0,115200` to the kernel command line and watch `virsh console`.
+
+**On dracut** the agent already logs to the console, including which device it picked, what
+it did about a missing resolver, and the last line of any failed transfer. `rd.syncthing_socket=0`
+on the kernel command line turns it off for one boot, for when the network path is what is
+broken and you just want the prompt back.
 
 Check what discovery currently advertises for your key holder:
 
@@ -396,6 +438,31 @@ The trade-off runs both ways:
 
 Because this does not use a keyscript, it composes with Clevis rather than competing: run
 both, and whichever answers the prompt first wins.
+
+### How the answer is delivered
+
+Same goal on both generators, different plumbing, because the two initrds ask in entirely
+different ways.
+
+On **initramfs-tools**, a `local-top` script finds the running `/lib/cryptsetup/askpass`,
+reads the `/lib/cryptsetup/passfifo` it is waiting on out of `/proc/<pid>/fd`, and writes
+the passphrase into it. The device being asked about comes from `CRYPTTAB_SOURCE` in that
+process's environment.
+
+On **dracut**, there is no askpass and no passfifo. `systemd-cryptsetup` asks through
+systemd's password agent protocol, so `syncthing-socket luks-agent` runs as one more agent:
+it watches `/run/systemd/ask-password/` for `ask.*` requests and replies on the datagram
+socket each one names. Several agents may answer the same request and the first useful
+answer wins, which is the same property the passfifo race relies on.
+
+One difference is worth knowing about. systemd sets no `CRYPTTAB_SOURCE`, so the dracut
+agent cannot be told which device is being asked about; it scans the block devices for a
+LUKS2 header carrying a `syncthing-socket` token and uses the first one it finds. With a
+single encrypted volume, the documented case, this is equivalent. With two of them both
+carrying our token, it would answer with the wrong one's configuration.
+
+`rd.syncthing_socket=0` on the kernel command line disables the agent for one boot, for
+when the network path is what is broken and you just want the console prompt.
 
 ## Security notes
 

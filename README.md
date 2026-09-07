@@ -162,9 +162,10 @@ passphrase before it can finish booting. But if it cannot accept inbound connect
 cannot SSH in to provide one. `syncthing-socket` inverts the direction: **the booting
 machine dials out** and you hand it the passphrase from your laptop.
 
-- On the booting machine, an initramfs `local-top` script runs `syncthing-socket client`
-  and writes the result into the same passfifo that cryptsetup's own prompt reads from. It
-  does not replace that prompt.
+- On the booting machine, the initramfs runs `syncthing-socket client` and hands the
+  result to whatever is asking for the passphrase, without replacing the prompt. Under
+  initramfs-tools that means writing into the same passfifo cryptsetup's own askpass reads
+  from; under dracut it means answering systemd's password request as one more agent.
 - On your laptop, you pipe the passphrase into `syncthing-socket server` when you want the
   machine to come up.
 
@@ -173,9 +174,9 @@ machine dials out** and you hand it the passphrase from your laptop.
 printf %s 'your-luks-passphrase' | syncthing-socket server --passphrase "your-key-seed"
 ```
 
-Like Clevis, it hooks the initramfs without replacing cryptsetup's passphrase prompt, so
-console entry, `cryptroot-unlock`, Clevis/Tang and TPM agents all keep working. Whichever
-key arrives first wins, and `/etc/crypttab` needs no changes.
+Like Clevis, it hooks the initramfs without replacing the passphrase prompt, so console
+entry, Clevis/Tang and TPM agents all keep working, as does `cryptroot-unlock` where that
+exists. Whichever key arrives first wins, and `/etc/crypttab` needs no changes.
 
 Debian/Ubuntu packages install the pieces. Add the signed repository:
 
@@ -187,12 +188,18 @@ sudo curl -fsSL https://muelli.github.io/syncthing-socket/deb/KEY.gpg -o /etc/ap
 echo "deb [signed-by=/etc/apt/keyrings/syncthing-socket.gpg] https://muelli.github.io/syncthing-socket/deb stable main" | sudo tee /etc/apt/sources.list.d/syncthing-socket.list
 ```
 
+Then install the integration matching your initramfs generator. `dpkg -S
+/usr/sbin/update-initramfs` says which you have: `initramfs-tools` or `dracut`, the latter
+being what Ubuntu 26.04 and later use. Installing the wrong one fails silently, so it is
+worth the one command.
+
 ```bash
 sudo apt update && sudo apt install syncthing-socket syncthing-socket-luks-initramfs
 ```
 
-The initramfs package needs **initramfs-tools**. Ubuntu 26.04 and later use dracut
-instead, where it does nothing; see the requirements in the recipe below.
+```bash
+sudo apt update && sudo apt install syncthing-socket syncthing-socket-luks-dracut
+```
 
 The full recipe (requirements, pairing modes and their threat models, `/etc/crypttab`
 wiring, fallbacks and gotchas) is in

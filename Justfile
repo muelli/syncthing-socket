@@ -37,6 +37,15 @@ install-contrib:
     install -Dm755 contrib/initramfs-luks/syncthing-luks-bind {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-bind
     install -Dm755 contrib/initramfs-luks/syncthing-luks-setup {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-setup
 
+# Install the dracut LUKS integration, for Ubuntu 26.04 and later where dracut rather than
+# initramfs-tools builds the initramfs. Use this OR install-contrib, not both.
+install-contrib-dracut:
+    install -Dm755 contrib/dracut-luks/90syncthing-socket/module-setup.sh {{DESTDIR}}/usr/lib/dracut/modules.d/90syncthing-socket/module-setup.sh
+    install -Dm755 contrib/dracut-luks/90syncthing-socket/syncthing-socket-start.sh {{DESTDIR}}/usr/lib/dracut/modules.d/90syncthing-socket/syncthing-socket-start.sh
+    install -Dm755 contrib/dracut-luks/90syncthing-socket/syncthing-socket-stop.sh {{DESTDIR}}/usr/lib/dracut/modules.d/90syncthing-socket/syncthing-socket-stop.sh
+    install -Dm755 contrib/initramfs-luks/syncthing-luks-bind {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-bind
+    install -Dm755 contrib/initramfs-luks/syncthing-luks-setup {{DESTDIR}}{{PREFIX}}/sbin/syncthing-luks-setup
+
 # Run the test suite
 test:
     {{GO}} test -v ./...

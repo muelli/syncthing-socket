@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+	if command -v dracut >/dev/null 2>&1; then
+		dracut --force --regenerate-all || true
+	fi
+	# No /etc/crypttab change is needed: the unlock answers systemd's password request
+	# alongside the console prompt rather than replacing it. A seed does have to be
+	# configured somewhere.
+	# Only luks.conf can be checked cheaply here. Reading the other supported location,
+	# a token in the LUKS2 header, would mean probing every block device from a
+	# maintainer script, so say what this does and does not know rather than telling a
+	# correctly configured machine that it is unconfigured.
+	if [ ! -r /etc/syncthing-socket/luks.conf ]; then
+		echo "syncthing-socket-luks-dracut: no /etc/syncthing-socket/luks.conf." >&2
+		echo "  That is fine if you have already run syncthing-luks-bind to store the" >&2
+		echo "  configuration in the LUKS2 header, which is not checked here. If you" >&2
+		echo "  have not, do that or create luks.conf, then rerun dracut --force." >&2
+		echo "  See /usr/share/doc/syncthing-socket-luks-dracut/." >&2
+	fi
+fi
+
+#DEBHELPER#
