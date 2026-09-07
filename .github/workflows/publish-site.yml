@@ -135,6 +135,29 @@ jobs:
               cp "$apk" "site/fdroid/repo/${base}-${tag}.apk"
             done
           done
+
+          # Only publish APKs carrying the pinned signing identity. Releases predating
+          # signing/app-cert.pem exist and are signed by a different key; an APK with a
+          # foreign signer in the same repository is worse than absent, because a client
+          # that installs it cannot then upgrade to a correctly signed build without
+          # uninstalling first.
+          EXPECTED=$(openssl x509 -in "$GITHUB_WORKSPACE/signing/app-cert.pem" -outform DER \
+            | sha256sum | cut -d' ' -f1)
+          echo "pinned APK signer: $EXPECTED"
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)
+          if [ -z "$BUILD_TOOLS" ] || [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            echo "apksigner not found; refusing to publish APKs unverified." >&2
+            exit 1
+          fi
+          for apk in site/fdroid/repo/*.apk; do
+            [ -e "$apk" ] || continue
+            actual=$("$BUILD_TOOLS/apksigner" verify --print-certs "$apk" 2>/dev/null \
+              | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1)
+            if [ "$actual" != "$EXPECTED" ]; then
+              echo "dropping $(basename "$apk"): signer $actual does not match the pin"
+              rm -f "$apk"
+            fi
+          done
           ls -la site/fdroid/repo/
 
           openssl pkcs12 -export -out site/fdroid/keystore.p12 \
