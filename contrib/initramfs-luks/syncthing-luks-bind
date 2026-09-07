@@ -49,6 +49,26 @@ TMPJSON=$(mktemp)
 trap 'rm -f "$TMPJSON"' EXIT
 chmod 600 "$TMPJSON"
 
+# Remove any configuration we wrote before, because "token import" always adds a new token
+# rather than replacing one. Without this, re-binding leaves the old token at a lower id,
+# both unlock paths take the first syncthing-socket token they find, and so the machine
+# keeps using the configuration you thought you had just replaced. That fails at the next
+# boot, as a rejected key or a wrong-peer error, with nothing pointing at the cause.
+token_id=0
+while [ "$token_id" -lt 32 ]; do
+	token_json=$(cryptsetup token export --token-id "$token_id" "$DEVICE" 2>/dev/null) || {
+		token_id=$((token_id + 1))
+		continue
+	}
+	case "$token_json" in
+	*'"type"'*'"syncthing-socket"'*)
+		echo "Replacing the existing syncthing-socket token $token_id."
+		cryptsetup token remove --token-id "$token_id" "$DEVICE"
+		;;
+	esac
+	token_id=$((token_id + 1))
+done
+
 cat > "$TMPJSON" <<JSON
 {"type":"syncthing-socket","keyslots":["0"],"p2p_key_seed":"$P2P_KEY_SEED","key_bearing_device_id":"$KEY_BEARING_DEVICE_ID","unlock_role":"$UNLOCK_ROLE"}
 JSON
@@ -57,4 +77,12 @@ echo "Injecting syncthing-socket metadata into $DEVICE..."
 # `token import` is the verb for custom JSON. `token add` is for keyring tokens and does
 # not accept --json at all.
 cryptsetup token import --json-file="$TMPJSON" "$DEVICE"
-echo "Success. Verify with: sudo cryptsetup token export --token-id 0 $DEVICE"
+
+# Report where it actually landed. cryptsetup picks the lowest free id, which is not
+# necessarily 0 once Clevis or systemd-tpm2 has a token in the same header.
+NEW_ID=$(cryptsetup luksDump "$DEVICE" | awk '
+	/^Tokens:/ { in_tokens = 1; next }
+	/^[^[:space:]]/ { in_tokens = 0 }
+	in_tokens && /syncthing-socket/ { gsub(/:/, "", $1); print $1; exit }
+')
+echo "Success. Verify with: sudo cryptsetup token export --token-id ${NEW_ID:-0} $DEVICE"
