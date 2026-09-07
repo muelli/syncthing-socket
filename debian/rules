@@ -78,6 +78,21 @@ override_dh_auto_install:
 # applies. Skipping it also keeps cross-building free of a target binutils: dh_strip,
 # dh_shlibdeps and dh_makeshlibs all shell out to <triplet>-strip or -objdump.
 # dh_dwz is separately impossible, as Go emits compressed DWARF it cannot process.
+# The unit needs a passphrase before it can do anything, so starting it on install can
+# only produce a failed service. Ship it installed but inert; "systemctl enable --now
+# syncthing-socket" once configured. The LUKS integration does not use it at all.
+# Scoped to the one package that ships a unit, which also keeps dh from warning about
+# template units for the two that do not.
+override_dh_installsystemd:
+	dh_installsystemd -psyncthing-socket --no-enable --no-start
+
+# debhelper 13 does not put dh_installsysusers in the sequence, so debian/*.sysusers is
+# silently ignored without this. The unit runs as User=syncthing-socket and systemd fails
+# it with 217/USER before executing anything if that user does not exist, which is what
+# shipping the unit without creating the user did on every install.
+execute_after_dh_install:
+	dh_installsysusers
+
 override_dh_dwz:
 
 override_dh_shlibdeps:

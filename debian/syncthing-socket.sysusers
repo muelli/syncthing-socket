@@ -1,0 +1,4 @@
+# The packaged unit runs as this user. Without it systemd fails the service with
+# 217/USER before it ever executes anything, which is what shipping the unit without
+# creating the user produced on every install.
+u syncthing-socket - "syncthing-socket service" /nonexistent -
