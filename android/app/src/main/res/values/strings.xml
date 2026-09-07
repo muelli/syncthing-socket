@@ -1,4 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Syncthing LUKS</string>
+
+    <!-- Enrolment -->
+    <string name="enroll_title">Set up this phone</string>
+    <string name="enroll_explainer">This app unlocks the encrypted disk of a computer running
+        syncthing-socket. The computer waits at boot, you confirm here, and the passphrase
+        travels to it over the Syncthing relay network.</string>
+    <string name="enroll_explainer_pairing">To pair, run <b>syncthing-luks-setup</b> on that
+        computer. It prints a QR code and the same details as text.</string>
+    <string name="enroll_scan">Scan the QR code</string>
+    <string name="enroll_manual">Enter the details as text</string>
+    <string name="enroll_manual_title">Enter pairing details</string>
+    <string name="enroll_manual_hint">Copy these from the output of syncthing-luks-setup.</string>
+    <string name="enroll_field_passphrase">Disk passphrase</string>
+    <string name="enroll_field_seed">Pairing seed</string>
+    <string name="enroll_field_device">Computer Device ID</string>
+    <string name="enroll_save">Save and continue</string>
+    <string name="enroll_back">Back</string>
+    <string name="enroll_incomplete">Fill in all three fields.</string>
+    <string name="enroll_bad_qr">That QR code is not a syncthing-socket pairing code.</string>
+    <string name="enroll_bad_device_id">The Device ID does not look right. It should be 56
+        characters in groups separated by dashes.</string>
+    <string name="enroll_saved">Paired. This phone can now unlock that computer.</string>
+    <string name="enroll_auth_reason">Confirm your identity to store the pairing</string>
+
+    <!-- Unlock -->
+    <string name="unlock_title">Unlock your computer</string>
+    <string name="unlock_button">Unlock</string>
+    <string name="unlock_auth_reason">Confirm your identity to unlock your computer</string>
+    <string name="unlock_working">Contacting your computer…</string>
+    <string name="unlock_success">Unlocked</string>
+    <string name="unlock_retry">Try again</string>
+
+    <!-- Failures, phrased as what to do next rather than what went wrong -->
+    <string name="err_server_offline">Your computer has not announced itself yet. It may not be
+        at its unlock prompt, or its announcement may still be propagating, which takes up to a
+        minute after it boots. Wait a few moments and try again.</string>
+    <string name="err_server_unreachable">Your computer could not be reached at any of the
+        addresses it last advertised. If it has only just booted, wait a few moments. If it has
+        been up a while, check that it is at its unlock prompt and has a network connection.</string>
+    <string name="err_wrong_device">The computer that answered is not the one this phone is
+        paired with. Do not retry. Re-run the setup on the computer you meant to unlock.</string>
+    <string name="err_no_network">This phone could not reach the network. Check your connection
+        and try again.</string>
+    <string name="err_rejected">That computer refused this phone. Its pairing names a different
+        phone, so run the setup again on the computer.</string>
+    <string name="err_unknown">The unlock did not complete.</string>
+    <string name="err_details">Details: %1$s</string>
+
+    <!-- Authentication and key state -->
+    <string name="auth_unavailable">This phone has no screen lock set up. The passphrase is
+        stored under a key that requires one, so set a PIN, pattern, password or biometric in
+        the system settings first.</string>
+    <string name="key_invalidated">The stored pairing can no longer be decrypted, because the
+        phone\'s biometrics or screen lock changed. The stored data is now unreadable to
+        everyone, including this app, so pair again.</string>
+    <string name="key_invalidated_action">Pair again</string>
+
+    <!-- Camera -->
+    <string name="camera_denied">Camera access is needed to scan the QR code. Grant it, or enter
+        the details as text instead.</string>
+    <string name="scanner_cancel">Cancel</string>
 </resources>
