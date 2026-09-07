@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2026 Tobias Mueller and Syncthing LUKS contributors
 SPDX-License-Identifier: AGPL-3.0-or-later
 
 Landing page for the self-hosted F-Droid repository. Published by
-.github/workflows/publish-fdroid.yml, which substitutes {{REPO_URL}} and
+.github/workflows/publish-site.yml, which substitutes {{REPO_URL}},
 {{FINGERPRINT}}. The app list is rendered client-side from the repository's
 own index (fdroid/repo/index-v2.json), so it is always current. Everything is
 self-contained: no external scripts, styles, fonts, or trackers.
@@ -123,26 +123,41 @@ self-contained: no external scripts, styles, fonts, or trackers.
   <span id="count" role="status" aria-live="polite"></span>
   <div id="apps" aria-labelledby="apps-heading">
     <noscript><p>Enable JavaScript to browse the app list here, or add the
-      repository in F-Droid — it works without JavaScript.</p></noscript>
+      repository in F-Droid; it works without JavaScript.</p></noscript>
   </div>
+
+  <h2 id="apt-heading">Debian and Ubuntu packages</h2>
+  <p>The command-line tool and the initramfs LUKS integration are published as
+     signed Debian packages for amd64 and arm64.</p>
+  <pre><code>sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL {{SITE_BASE}}/deb/KEY.gpg -o /etc/apt/keyrings/syncthing-socket.gpg
+echo "deb [signed-by=/etc/apt/keyrings/syncthing-socket.gpg] {{SITE_BASE}}/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/syncthing-socket.list
+sudo apt-get update
+sudo apt-get install syncthing-socket</code></pre>
+  <p>For unattended LUKS unlocking at boot, also install
+     <code>syncthing-socket-luks-initramfs</code>.</p>
+  <p>Signing key fingerprint: <code>{{APT_KEY_FINGERPRINT}}</code></p>
+  <p><strong>Do not use <code>[trusted=yes]</code>.</strong> It tells apt to accept
+     the repository without checking any signature, so whoever can serve you those
+     bytes can install any package they like as root. The
+     <code>signed-by</code> line above pins this repository to the key shown here.</p>
 </main>
 
 <footer>
   <p>Every APK is built from public source code and passes F-Droid's scanner for
-     non-free components — each app links its freedom report above.</p>
-  <p><strong>Don't trust, verify:</strong> builds are reproducible and every
-     release is recorded in the public Sigstore transparency log —
-     <a href="https://github.com/muelli/Syncthing LUKS/blob/main/docs/TRANSPARENCY.md">how
-     to verify</a>. APK signing certificate (SHA-256):
-     <code>8f02760a5c600a686c7ff452521c7a4be9f8ced922cdc7f9fc639b068625c289</code></p>
-  <p><a href="https://github.com/muelli/Syncthing LUKS">Source code, issues and
-     documentation on GitHub</a>.</p>
+     non-free components; each app links its freedom report above.</p>
+  <p><strong>Don't trust, verify:</strong> every release is recorded in the public
+     Sigstore transparency log and can be checked with
+     <code>gh attestation verify</code>.
+     <a href="{{SOURCE_URL}}/blob/main/docs/TRANSPARENCY.md">How to verify</a>.</p>
+  <p><a href="{{SOURCE_URL}}">Source code, issues and documentation on GitHub</a>.</p>
 </footer>
 
 <script>
 (function () {
   "use strict";
-  var REPO = "repo";
+  var REPO = "fdroid/repo";
   var appsEl = document.getElementById("apps");
   var countEl = document.getElementById("count");
   var qEl = document.getElementById("q");
@@ -231,7 +246,7 @@ self-contained: no external scripts, styles, fonts, or trackers.
                 ? "<details><summary>Older versions (" + older.length + ")</summary>"
                   + '<ul class="versions">' + older.map(function (v) {
                       return "<li>version " + esc(v.manifest.versionName)
-                        + " (" + fmtSize(v.file.size) + ") — "
+                        + " (" + fmtSize(v.file.size) + "): "
                         + '<a href="' + esc(REPO + v.file.name) + '">APK</a> · '
                         + '<a href="freedom-report-' + esc(a.id) + '-' + esc(v.manifest.versionCode) + '.txt">freedom report</a></li>';
                     }).join("") + "</ul></details>" : "")

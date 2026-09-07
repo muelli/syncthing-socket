@@ -108,6 +108,93 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  build-deb:
+    needs: changes
+    if: ${{ needs.changes.outputs.cli == 'true' || startsWith(github.ref, 'refs/tags/') }}
+    name: Build Debian Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debhelper dpkg-dev fakeroot
+
+      - name: Generate debian/changelog from the tag
+        run: |
+          set -euo pipefail
+          # Tags are v<commit-count>. Debian needs a version that sorts monotonically and
+          # leaves room for a later 0.1.0, so v122 becomes 0.0.122-1. A committed
+          # changelog would go stale the moment anything is tagged.
+          RAW=$(sh scripts/version.sh)
+          COUNT=${RAW#v}
+          COUNT=${COUNT%-dirty}
+          DEB_VERSION="0.0.${COUNT}-1"
+          echo "DEB_VERSION=$DEB_VERSION" >> "$GITHUB_ENV"
+          cat > debian/changelog <<EOF
+          syncthing-socket ($DEB_VERSION) unstable; urgency=medium
+
+            * Build from ${GITHUB_SHA}.
+
+           -- syncthing-socket CI <noreply@github.com>  $(date -R)
+          EOF
+          head -1 debian/changelog
+
+      - name: Build packages
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            echo "::group::$arch"
+            # -d because Build-Depends names no toolchain: setup-go provides it, and the
+            # distro's golang-go is too old for go.mod in any case.
+            dpkg-buildpackage -us -uc -b -d --host-arch "$arch"
+            echo "::endgroup::"
+          done
+          mv ../*.deb dist/
+          ls -la dist/
+
+      - name: Verify the packages
+        run: |
+          set -euo pipefail
+          # The arm64 package is cross-built, so confirm it really is arm64 rather than a
+          # host binary with the wrong label.
+          dpkg-deb -x dist/syncthing-socket_*_arm64.deb /tmp/arm64
+          file /tmp/arm64/usr/bin/syncthing-socket | tee /tmp/arch.txt
+          grep -q 'ARM aarch64' /tmp/arch.txt
+          dpkg-deb -x dist/syncthing-socket_*_amd64.deb /tmp/amd64
+          file /tmp/amd64/usr/bin/syncthing-socket | grep -q 'x86-64'
+          # The initramfs package is what the LUKS unlock depends on; make sure the
+          # scripts are actually in it.
+          dpkg-deb -c dist/syncthing-socket-luks-initramfs_*_all.deb \
+            | grep -q 'scripts/local-top/syncthing-socket'
+
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*.deb'
+
+      - name: Upload Debian Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: syncthing-socket-debs
+          path: dist/*.deb
+          retention-days: 7
+
   build-android:
     needs: changes
     if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') }}
@@ -231,8 +318,11 @@ jobs:
           retention-days: 7
 
   release:
-    needs: [build-cli, build-android]
-    if: always() && startsWith(github.ref, 'refs/tags/')
+    needs: [build-cli, build-deb, build-android]
+    # Deliberately not `always()`. A release is the input to both distribution
+    # channels, so publishing one assembled from whatever happened to succeed would
+    # ship a partial or stale set to users' apt and F-Droid clients.
+    if: startsWith(github.ref, 'refs/tags/')
     name: Create GitHub Release
     runs-on: ubuntu-latest
     permissions:

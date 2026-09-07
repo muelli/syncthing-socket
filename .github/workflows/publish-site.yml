@@ -1,0 +1,273 @@
+name: Publish distribution site
+
+# Builds and deploys the whole GitHub Pages site: the landing page, the F-Droid
+# repository and the APT repository.
+#
+# One workflow owns the entire site on purpose. Pages deployments replace the site
+# wholesale, so two workflows each deploying their own half would delete each other's.
+#
+# The site is stateless: it is rebuilt from scratch on every run as a pure function of the
+# GitHub releases. Releases are the durable store, which keeps the ~100 MB APKs out of git
+# history where they could never be pruned again.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      releases:
+        description: 'How many recent releases to include'
+        required: false
+        default: '5'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: publish-site
+  cancel-in-progress: false
+
+env:
+  # Capping this keeps a stateless rebuild bounded as releases accumulate.
+  RELEASE_COUNT: ${{ inputs.releases || '5' }}
+
+jobs:
+  publish:
+    name: Build and deploy the site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out where the site will live
+        run: |
+          # github.event.repository is not populated for workflow_dispatch, so derive the
+          # Pages base URL from GITHUB_REPOSITORY instead of the event payload.
+          echo "REPO_BASE=https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qrencode apt-utils dpkg-dev gnupg
+          # Ubuntu's fdroidserver lags well behind; the release workflow already pip
+          # installs it for the scanner.
+          pip install --break-system-packages fdroidserver
+
+      - name: Collect release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          TAGS=$(gh release list --limit "$RELEASE_COUNT" --json tagName --jq '.[].tagName')
+          if [ -z "$TAGS" ]; then
+            echo "No releases found; there is nothing to publish." >&2
+            exit 1
+          fi
+          for tag in $TAGS; do
+            echo "::group::$tag"
+            # Older releases predate the .deb packages, so a missing pattern is expected.
+            gh release download "$tag" --dir "release-assets/$tag" --pattern '*.apk' --pattern '*.deb' --clobber || true
+            ls -la "release-assets/$tag" 2>/dev/null || echo "no matching assets"
+            echo "::endgroup::"
+          done
+          find release-assets -name '*.apk' -o -name '*.deb' | sort
+
+      # The repository fingerprint is the SHA-256 of this certificate and clients pin it
+      # when the repository is added. A stateless rebuild re-derives the identity every
+      # run, so a non-reproducible key would change the fingerprint on every publish;
+      # scripts/ pins it and fails if the seed disagrees.
+      - name: Derive signing identities
+        env:
+          MASTER_SECRET: ${{ secrets.MASTER_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MASTER_SECRET:-}" ]; then
+            echo "MASTER_SECRET is not set; refusing to publish an unsigned or" >&2
+            echo "throwaway-signed repository." >&2
+            exit 1
+          fi
+
+          KS_PASS=$(go run ./scripts "$MASTER_SECRET" fdroid)
+          echo "::add-mask::$KS_PASS"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+
+          PGP_FP=$(go run ./scripts "$MASTER_SECRET" debian)
+          echo "PGP_FP=$PGP_FP" >> "$GITHUB_ENV"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          gpg --batch --import secret_debian.asc
+          shred -u secret_debian.asc
+          echo "APT signing key: $PGP_FP"
+
+      - name: Build the F-Droid repository
+        run: |
+          set -euo pipefail
+          mkdir -p site/fdroid/repo
+          find release-assets -name '*.apk' -exec cp {} site/fdroid/repo/ \;
+
+          openssl pkcs12 -export -out site/fdroid/keystore.p12 \
+            -inkey key_fdroid.pem -in cert_fdroid.pem \
+            -passout "pass:$KS_PASS" -name fdroid
+          rm -f key_fdroid.pem cert_fdroid.pem
+
+          # repo_icon must name a file sitting next to config.yml. If it is missing,
+          # fdroid update silently substitutes a generated QR-code placeholder as the
+          # repository logo.
+          cp assets/logo.png site/fdroid/icon.png
+
+          cat > site/fdroid/config.yml <<EOF
+          repo_url: ${REPO_BASE}/fdroid/repo
+          repo_name: Syncthing LUKS
+          repo_icon: icon.png
+          repo_description: Apps from the syncthing-socket project.
+          archive_older: 3
+          archive_url: ${REPO_BASE}/fdroid/archive
+          archive_name: Syncthing LUKS (archive)
+          keystore: keystore.p12
+          repo_keyalias: fdroid
+          keystorepass: "${KS_PASS}"
+          keypass: "${KS_PASS}"
+          EOF
+
+          # The store listing F-Droid shows comes from here. Without this the index is
+          # derived from the APK alone and the entry has no name, summary or description.
+          APP_ID=com.github.muelli.syncthingsocket
+          META=site/fdroid/metadata/$APP_ID/en-US
+          mkdir -p "$META"
+          FASTLANE=android/fastlane/metadata/android/en-US
+          for f in title short_description full_description; do
+            [ -f "$FASTLANE/$f.txt" ] && cp "$FASTLANE/$f.txt" "$META/$f.txt"
+          done
+          if [ -d "$FASTLANE/images" ]; then cp -r "$FASTLANE/images/." "$META/"; fi
+          if [ -d "$FASTLANE/changelogs" ]; then cp -r "$FASTLANE/changelogs" "$META/"; fi
+          [ -f "$META/icon.png" ] || cp site/fdroid/icon.png "$META/icon.png"
+          find site/fdroid/metadata -type f | sort
+
+          (cd site/fdroid && fdroid update --create-metadata --verbose)
+          rm -f site/fdroid/keystore.p12
+
+      - name: Repair hashed graphic names
+        run: |
+          set -euo pipefail
+          # fdroid update sometimes indexes localized graphics under a hashed name without
+          # writing a file there, which serves 404s to clients. Find each referenced name
+          # that is missing and copy the sibling with the same content.
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re, shutil
+          repo = pathlib.Path("site/fdroid/repo")
+          index = repo / "index-v2.json"
+          if not index.exists():
+              raise SystemExit("index-v2.json missing; fdroid update did not run")
+          data = json.loads(index.read_text())
+          referenced = set(re.findall(r'"name":\s*"(/[^"]+\.(?:png|jpg|jpeg|webp))"', index.read_text()))
+          by_hash = {}
+          for p in repo.rglob("*"):
+              if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                  by_hash.setdefault(hashlib.sha256(p.read_bytes()).hexdigest(), []).append(p)
+          fixed = 0
+          for name in sorted(referenced):
+              target = repo / name.lstrip("/")
+              if target.exists():
+                  continue
+              want = None
+              for entry in re.finditer(r'"name":\s*"%s",\s*"sha256":\s*"([0-9a-f]+)"' % re.escape(name), index.read_text()):
+                  want = entry.group(1)
+              cands = by_hash.get(want or "", [])
+              if cands:
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(cands[0], target)
+                  print("restored", name, "from", cands[0])
+                  fixed += 1
+              else:
+                  print("WARNING: no source for referenced graphic", name)
+          print("repaired", fixed, "graphic(s)")
+          PY
+
+      - name: Build the APT repository
+        run: |
+          set -euo pipefail
+          POOL=site/deb/pool/main/s/syncthing-socket
+          mkdir -p "$POOL" site/deb/dists/stable/main
+          find release-assets -name '*.deb' -exec cp {} "$POOL/" \; || true
+
+          if ! ls "$POOL"/*.deb >/dev/null 2>&1; then
+            echo "No .deb assets in the last $RELEASE_COUNT releases; skipping the APT repo."
+            echo "APT_BUILT=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "APT_BUILT=true" >> "$GITHUB_ENV"
+
+          cd site/deb
+          # dpkg-scanpackages --arch <a> matches *_<a>.deb and *_all.deb, so the
+          # architecture-independent package lands in every index. That is the layout apt
+          # expects; a separate binary-all index is not consulted by default.
+          for arch in amd64 arm64; do
+            mkdir -p "dists/stable/main/binary-$arch"
+            dpkg-scanpackages --arch "$arch" pool /dev/null \
+              > "dists/stable/main/binary-$arch/Packages"
+            # -n omits the name and timestamp, so a rebuild of unchanged input produces
+            # identical bytes rather than a gratuitously different index every publish.
+            gzip -9nc "dists/stable/main/binary-$arch/Packages" \
+              > "dists/stable/main/binary-$arch/Packages.gz"
+          done
+
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin="syncthing-socket" \
+            -o APT::FTPArchive::Release::Label="syncthing-socket" \
+            -o APT::FTPArchive::Release::Suite="stable" \
+            -o APT::FTPArchive::Release::Codename="stable" \
+            -o APT::FTPArchive::Release::Components="main" \
+            -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
+            release dists/stable > dists/stable/Release
+
+          # InRelease is what modern apt fetches; Release.gpg is kept for older clients.
+          gpg --batch --yes --armor --clearsign -o dists/stable/InRelease dists/stable/Release
+          gpg --batch --yes --armor --detach-sign -o dists/stable/Release.gpg dists/stable/Release
+          # apt decides how to parse a signed-by keyring from its extension: .gpg must be
+          # a binary keyring and .asc armoured. Shipping the armoured file as KEY.gpg
+          # makes apt reject the repository with NO_PUBKEY, which was seen before this
+          # dearmor was added. Publish both so either form works.
+          gpg --dearmor < "$GITHUB_WORKSPACE/signing/debian-pub.asc" > KEY.gpg
+          cp "$GITHUB_WORKSPACE/signing/debian-pub.asc" KEY.asc
+
+          echo "=== verifying the signature the way apt will ==="
+          gpg --batch --verify dists/stable/InRelease
+          gpg --batch --verify dists/stable/Release.gpg dists/stable/Release
+
+      - name: Render the landing page
+        run: |
+          set -euo pipefail
+          # The repository fingerprint is the SHA-256 of the pinned index-signing cert.
+          FP=$(openssl x509 -in signing/fdroid-cert.pem -outform DER | sha256sum | cut -d' ' -f1)
+          REPO_URL="${REPO_BASE}/fdroid/repo"
+          ADD_URL="${REPO_URL}?fingerprint=${FP}"
+          qrencode -o site/qr.png -s 8 -m 2 "$ADD_URL"
+          sed -e "s|{{REPO_URL}}|${REPO_URL}|g" \
+              -e "s|{{FINGERPRINT}}|${FP}|g" \
+              -e "s|{{APT_KEY_FINGERPRINT}}|${PGP_FP}|g" \
+              -e "s|{{SITE_BASE}}|${REPO_BASE}|g" \
+              -e "s|{{SOURCE_URL}}|https://github.com/${GITHUB_REPOSITORY}|g" \
+              fdroid/landing.html > site/index.html
+          touch site/.nojekyll
+          echo "F-Droid fingerprint: $FP"
+          echo "APT key fingerprint: $PGP_FP"
+          find site -maxdepth 2 -type d | sort
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
