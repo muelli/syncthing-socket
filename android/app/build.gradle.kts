@@ -14,21 +14,46 @@ android {
         minSdk = 26
         targetSdk = 34
         
+        // versionCode must stay monotonic even when built from a release
+        // source tarball that has no .git directory (F-Droid's build
+        // infrastructure does this). Preference order:
+        //   1. `git rev-list --count HEAD` when a repo is present.
+        //   2. A committed VERSION file at the repo root. build.yml writes
+        //      one into the CLI source tarball before archiving it
+        //      (see build-cli's "Build Binaries" step), and scripts/version.sh
+        //      accepts the same file as its own fallback, so a tag-built
+        //      tarball always carries a matching VERSION.
+        //   3. 1, only if neither source is available.
+        val repoRoot = rootProject.projectDir.parentFile
+
         val gitVersionCount = try {
             providers.exec {
                 commandLine("git", "rev-list", "--count", "HEAD")
+                workingDir = repoRoot
                 isIgnoreExitValue = true
-            }.standardOutput.asText.get().trim()
-        } catch (e: Exception) { "1" }
-        
+            }.standardOutput.asText.get().trim().toIntOrNull()
+        } catch (e: Exception) { null }
+
+        val versionFile = repoRoot.resolve("VERSION")
+        val fileVersionCount = if (versionFile.exists()) {
+            // Contents are whatever scripts/version.sh printed: "vN" on a
+            // release tag, "N" or "N-dirty" otherwise.
+            versionFile.readText().trim()
+                .removePrefix("v")
+                .removeSuffix("-dirty")
+                .toIntOrNull()
+        } else null
+
+        val appVersionCode = gitVersionCount ?: fileVersionCount ?: 1
+
         val gitVersionName = try {
             providers.exec {
                 commandLine("sh", "../../scripts/version.sh")
                 isIgnoreExitValue = true
             }.standardOutput.asText.get().trim()
         } catch (e: Exception) { "unknown" }
-        
-        versionCode = gitVersionCount.toIntOrNull() ?: 1
+
+        versionCode = appVersionCode
         versionName = gitVersionName
         
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
