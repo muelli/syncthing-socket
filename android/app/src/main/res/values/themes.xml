@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.SyncthingLUKS" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
+    <!--
+        The window has to agree with the UI drawn inside it. The app renders with
+        Compose's darkColorScheme, but this theme inherited from a Light parent, so the
+        window background was near-white. With a transparent status bar that showed
+        through as a white band above the content, and it is also what the user sees for
+        the moment between the window appearing and Compose drawing its first frame.
+
+        This colour is Material 3's baseline dark surface, which is what darkColorScheme()
+        uses for the background, so the window and the content match exactly and there is
+        no seam.
+    -->
+    <color name="window_background">#FF1C1B1F</color>
+
+    <style name="Theme.SyncthingLUKS" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <!-- Dark background, so the clock and icons in the status bar must stay light. -->
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
