@@ -57,6 +57,11 @@ func runLUKSAgent() error {
 	// the device instead was a real bug on the initramfs-tools side, where one wrong
 	// passphrase silenced the network path for the rest of the boot.
 	answered := map[string]bool{}
+	// Whether we have already handed over a passphrase this run. cryptsetup only asks
+	// again when the key it got was refused, so a fresh request after we answered one is
+	// a rejection and should say so. Left implicit, the console shows "delivered"
+	// followed by another prompt and leaves the reader to infer it.
+	delivered := false
 
 	slog.Info("waiting for a cryptsetup password request")
 
@@ -88,6 +93,11 @@ func runLUKSAgent() error {
 			// to be re-checked rather than settled once.
 			ensureResolver()
 
+			if delivered {
+				fmt.Fprintf(os.Stderr,
+					"syncthing-socket: %s rejected the passphrase, asking again\n",
+					cfg.Device)
+			}
 			fmt.Fprintf(os.Stderr, "syncthing-socket: requesting the passphrase for %s\n", cfg.Device)
 
 			passphrase, err := fetchPassphrase(cfg)
@@ -98,11 +108,26 @@ func runLUKSAgent() error {
 				continue
 			}
 
+			// Do not spend cryptsetup's prompt on a key we can already tell is wrong.
+			if err := verifyPassphrase(cfg.Device, passphrase); err != nil {
+				// The length is the one detail that distinguishes the interesting
+				// cases, a truncated transfer from a genuinely different passphrase,
+				// and it is only printed when something is already wrong.
+				fmt.Fprintf(os.Stderr,
+					"syncthing-socket: the passphrase received (%d bytes) does not "+
+						"unlock %s; not using it\n", len(passphrase), cfg.Device)
+				slog.Warn("received a passphrase that does not unlock the device",
+					"device", cfg.Device, "bytes", len(passphrase))
+				time.Sleep(agentRetryInterval)
+				continue
+			}
+
 			if err := replyToAsk(req.socket, passphrase); err != nil {
 				slog.Error("cannot deliver the passphrase", "error", err)
 				continue
 			}
 			answered[req.path] = true
+			delivered = true
 			fmt.Fprintf(os.Stderr, "syncthing-socket: passphrase delivered for %s\n", cfg.Device)
 		}
 	}

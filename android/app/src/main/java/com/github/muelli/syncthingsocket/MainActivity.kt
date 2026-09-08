@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -82,7 +83,23 @@ private enum class Readiness { Checking, Waiting, Stale, Absent, NoNetwork }
 private sealed class UnlockUi {
     object Idle : UnlockUi()
     object Working : UnlockUi()
+
+    /**
+     * The passphrase reached the computer. That is not the same as the computer having
+     * accepted it, and the difference matters: a rejected passphrase leaves the machine
+     * sitting at its prompt while the phone has already claimed victory and closed.
+     */
+    object Sent : UnlockUi()
+
+    /** Confirmed: the computer stopped announcing itself, so it got past its prompt. */
     object Success : UnlockUi()
+
+    /** The computer is still asking, so it did not accept what we sent. */
+    object NotAccepted : UnlockUi()
+
+    /** Sent, but we could not reach discovery to find out what happened. */
+    object Unverified : UnlockUi()
+
     data class Failed(val category: String, val detail: String?) : UnlockUi()
 }
 
@@ -414,6 +431,48 @@ class MainActivity : FragmentActivity() {
         }.start()
     }
 
+    /**
+     * Works out whether the computer actually unlocked.
+     *
+     * A machine waiting at its prompt re-announces itself every 60 seconds. Once it gets
+     * past the prompt it stops, so its discovery record goes stale. That transition is the
+     * only evidence available to the phone: the machine sends nothing back, and asking it
+     * directly is impossible because it stops listening the moment it unlocks.
+     *
+     * Only a stale or absent record counts as confirmation. Failing to reach discovery
+     * must not be read as success, which is the mistake that makes a green checkmark
+     * meaningless.
+     */
+    private fun verifyUnlocked() {
+        val deviceId = store.publicDeviceId()
+        if (deviceId == null) {
+            unlockUi.value = UnlockUi.Unverified
+            return
+        }
+        Thread {
+            val deadline = SystemClock.elapsedRealtime() + VERIFY_WINDOW_MILLIS
+            var reachedDiscovery = false
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val status = runCatching { Mobile.checkServerStatus(deviceId) }.getOrNull()
+                when (status?.state) {
+                    "STALE", "ABSENT" -> {
+                        runOnUiThread { unlockUi.value = UnlockUi.Success }
+                        return@Thread
+                    }
+                    "WAITING" -> reachedDiscovery = true
+                    else -> {} // no network, or the check failed; keep trying
+                }
+                Thread.sleep(VERIFY_POLL_MILLIS)
+            }
+            runOnUiThread {
+                // Still announcing at the deadline means it never left its prompt. If we
+                // never reached discovery at all, say so rather than blaming the computer.
+                unlockUi.value =
+                    if (reachedDiscovery) UnlockUi.NotAccepted else UnlockUi.Unverified
+            }
+        }.start()
+    }
+
     private fun startUnlock() {
         unlockUi.value = UnlockUi.Idle
         authenticate(getString(R.string.unlock_auth_reason)) {
@@ -436,11 +495,18 @@ class MainActivity : FragmentActivity() {
                     Mobile.unlockLUKS(pairing.passphrase, pairing.seed, pairing.deviceId)
                 }
                 runOnUiThread {
-                    unlockUi.value = result.fold(
-                        onSuccess = { UnlockUi.Success },
+                    result.fold(
+                        onSuccess = {
+                            // Delivered, not done. UnlockLUKS reports success once the
+                            // transfer completes locally; it has no way to learn whether
+                            // the passphrase was the right one.
+                            unlockUi.value = UnlockUi.Sent
+                            verifyUnlocked()
+                        },
                         onFailure = { e ->
                             val message = e.message ?: ""
-                            UnlockUi.Failed(Mobile.classifyUnlockError(message), message)
+                            unlockUi.value =
+                                UnlockUi.Failed(Mobile.classifyUnlockError(message), message)
                         }
                     )
                 }
@@ -691,13 +757,19 @@ private fun UnlockScreen(
 ) {
     val unlockFocus = remember { FocusRequester() }
     val unlockInteraction = remember { MutableInteractionSource() }
-    LaunchedEffect(state) { if (state !is UnlockUi.Working) unlockFocus.requestFocus() }
+    LaunchedEffect(state) {
+        if (state !is UnlockUi.Working && state !is UnlockUi.Sent && state !is UnlockUi.Success) {
+            unlockFocus.requestFocus()
+        }
+    }
 
     // Poll only while the user is looking at a screen where the answer changes what they
     // do. LaunchedEffect is cancelled when the screen leaves the composition or the state
     // changes, so this stops on its own during an unlock, after success, and whenever the
     // app is not showing this screen. No background work, no wakelocks.
-    if (state is UnlockUi.Idle || state is UnlockUi.Failed) {
+    if (state is UnlockUi.Idle || state is UnlockUi.Failed ||
+        state is UnlockUi.NotAccepted || state is UnlockUi.Unverified
+    ) {
         LaunchedEffect(state) {
             while (true) {
                 onPoll()
@@ -710,7 +782,7 @@ private fun UnlockScreen(
     // invites a second unlock nobody asked for.
     if (state is UnlockUi.Success) {
         LaunchedEffect(Unit) {
-            delay(2000)
+            delay(SUCCESS_LINGER_MILLIS)
             onFinished()
         }
     }
@@ -722,7 +794,8 @@ private fun UnlockScreen(
             .padding(32.dp)
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown ||
-                    state is UnlockUi.Working || state is UnlockUi.Success
+                    state is UnlockUi.Working || state is UnlockUi.Success ||
+                    state is UnlockUi.Sent
                 ) {
                     false
                 } else when (e.key) {
@@ -735,7 +808,9 @@ private fun UnlockScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(stringResource(R.string.unlock_title), style = MaterialTheme.typography.headlineMedium)
-        if (state is UnlockUi.Idle || state is UnlockUi.Failed) {
+        if (state is UnlockUi.Idle || state is UnlockUi.Failed ||
+            state is UnlockUi.NotAccepted || state is UnlockUi.Unverified
+        ) {
             Spacer(Modifier.height(20.dp))
             ReadinessChip(readiness)
         }
@@ -752,7 +827,53 @@ private fun UnlockScreen(
                 Text(stringResource(R.string.unlock_working))
             }
 
+            is UnlockUi.Sent -> {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(R.string.unlock_sent),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(24.dp))
+                TextButton(onClick = onFinished) {
+                    Text(stringResource(R.string.unlock_close))
+                }
+            }
+
             is UnlockUi.Success -> SuccessMark()
+
+            is UnlockUi.NotAccepted, is UnlockUi.Unverified -> {
+                val message = if (state is UnlockUi.NotAccepted) {
+                    stringResource(R.string.unlock_not_accepted)
+                } else {
+                    stringResource(R.string.unlock_unverified)
+                }
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        message,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = onUnlockClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .focusRequester(unlockFocus)
+                        .border(
+                            2.dp,
+                            focusBorderColor(unlockInteraction.collectIsFocusedAsState().value)
+                        ),
+                    interactionSource = unlockInteraction
+                ) { Text(stringResource(R.string.unlock_retry)) }
+            }
 
             is UnlockUi.Failed -> {
                 FailureCard(state)
@@ -881,6 +1002,21 @@ private fun PairingValue(label: String, value: String) {
 
 /** How often the unlock screen re-asks discovery. */
 private const val READINESS_POLL_MILLIS = 5000L
+
+/** How often to re-check while confirming that the computer got past its prompt. */
+private const val VERIFY_POLL_MILLIS = 5000L
+
+/**
+ * How long to wait for the computer to stop announcing before calling it a rejection.
+ *
+ * The machine announces every 60 seconds and a record counts as fresh for 150, so a
+ * machine that unlocked goes stale within about that. This allows one full cycle beyond
+ * that before concluding the passphrase was refused.
+ */
+private const val VERIFY_WINDOW_MILLIS = 210_000L
+
+/** How long the confirmed checkmark stays up before the app closes. */
+private const val SUCCESS_LINGER_MILLIS = 6000L
 
 /**
  * Says whether the computer looks ready, and never disables the unlock button.

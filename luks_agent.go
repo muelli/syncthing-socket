@@ -438,6 +438,29 @@ func (execRunner) run(name string, args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
+// verifyPassphrase checks that what arrived actually opens the device.
+//
+// Without this the agent hands cryptsetup whatever it received. A wrong passphrase then
+// looks identical to a right one from here: cryptsetup refuses it, throws away the
+// request, and asks again, so the console shows "passphrase delivered" followed by a fresh
+// prompt and the reader is left to infer what happened. Meanwhile the key holder has
+// already been told the transfer succeeded, because from its side it did.
+//
+// Checking first costs one extra PBKDF pass, which is milliseconds against a transfer that
+// takes tens of seconds, and turns a silent rejection into a statement of fact.
+func verifyPassphrase(device, passphrase string) error {
+	if device == "" {
+		// The configuration came from luks.conf, which names no device, so there is
+		// nothing to check against. Deliver it and let cryptsetup judge.
+		return nil
+	}
+	cmd := exec.Command("cryptsetup", "open", "--test-passphrase", "--key-file=-", device)
+	cmd.Stdin = strings.NewReader(passphrase)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run()
+}
+
 // fetchPassphrase runs this same binary as a subprocess to do the actual transfer.
 //
 // Re-executing rather than calling RunClient in process is deliberate. The client and

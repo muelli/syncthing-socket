@@ -29,7 +29,17 @@
     <string name="unlock_button">Unlock</string>
     <string name="unlock_auth_reason">Confirm your identity to unlock your computer</string>
     <string name="unlock_working">Contacting your computer…</string>
+    <string name="unlock_sent">Passphrase sent. Waiting for your computer to get past its
+        prompt, which takes up to a couple of minutes to confirm.</string>
+    <string name="unlock_close">Close</string>
     <string name="unlock_success">Unlocked</string>
+    <string name="unlock_not_accepted">Your computer is still asking for a passphrase, so it
+        did not accept the one this phone sent. Check that the passphrase stored here is
+        the current one for that disk; if you have changed it, run syncthing-luks-setup
+        on the computer again and re-pair.</string>
+    <string name="unlock_unverified">The passphrase was sent, but this phone could not
+        reach the network afterwards to check whether your computer unlocked. Look at the
+        computer to see.</string>
     <string name="unlock_retry">Try again</string>
 
     <!-- Readiness, from the discovery record's timestamp. Advice, never a gate: the
