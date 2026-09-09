@@ -20,9 +20,6 @@ object UnlockEntryPoints {
     /** Sent to MainActivity to mean "go straight to unlocking". */
     const val ACTION_UNLOCK = "com.github.muelli.syncthingsocket.action.UNLOCK"
 
-    /** Sent to the widget to mean "check the computer again". */
-    const val ACTION_REFRESH_WIDGET = "com.github.muelli.syncthingsocket.action.REFRESH_WIDGET"
-
     fun unlockIntent(context: Context): Intent =
         Intent(context, MainActivity::class.java).apply {
             action = ACTION_UNLOCK
@@ -42,8 +39,8 @@ object UnlockEntryPoints {
 
     /**
      * What the computer looks like it is doing, as one short line plus whether it is
-     * ready. Shared so the widget and the tile cannot drift from each other or from the
-     * unlock screen.
+     * ready. Used by the quick settings tile, which can ask honestly because it is only
+     * asked while the shade is open. The widget deliberately shows no status at all.
      *
      * Does network I/O, so never call it on the main thread.
      */
@@ -59,7 +56,7 @@ object UnlockEntryPoints {
         }
     }
 
-    /** The readiness states, as the widget and tile need them. */
+    /** The readiness states, as the tile needs them. */
     enum class Readiness(val labelRes: Int, val ready: Boolean) {
         Waiting(R.string.entry_waiting, true),
         Stale(R.string.entry_stale, false),

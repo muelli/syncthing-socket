@@ -53,13 +53,12 @@
             </intent-filter>
         </service>
 
-        <!-- Home screen widget. -->
+        <!-- Home screen widget: a button, with no status and no update cycle. -->
         <receiver
             android:name=".UnlockWidgetProvider"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.github.muelli.syncthingsocket.action.REFRESH_WIDGET" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

@@ -94,9 +94,8 @@
     <string name="shortcut_unlock_short">Unlock</string>
     <string name="shortcut_unlock_long">Unlock your computer</string>
     <string name="tile_label">Unlock computer</string>
-    <string name="widget_description">Unlock your computer, and see whether it is
-        waiting.</string>
-    <string name="widget_status_description">Whether your computer is waiting</string>
+    <string name="widget_description">A button on your home screen that unlocks your
+        computer.</string>
     <string name="entry_checking">Checking…</string>
     <string name="entry_waiting">Waiting to be unlocked</string>
     <string name="entry_stale">Announced a while ago</string>

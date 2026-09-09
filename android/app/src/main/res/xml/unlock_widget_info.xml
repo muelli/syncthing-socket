@@ -1,14 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  updatePeriodMillis is 30 minutes because that is the floor Android enforces; anything
-  smaller is silently rounded up. The status is therefore refreshed on tap rather than
-  relying on this.
+  updatePeriodMillis is 0 on purpose. The widget shows nothing that changes, so there is
+  nothing to poll for and no reason to have Android wake the app on a timer.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:initialLayout="@layout/widget_unlock"
     android:minWidth="180dp"
     android:minHeight="80dp"
     android:resizeMode="horizontal|vertical"
-    android:updatePeriodMillis="1800000"
+    android:updatePeriodMillis="0"
     android:widgetCategory="home_screen"
     android:description="@string/widget_description" />

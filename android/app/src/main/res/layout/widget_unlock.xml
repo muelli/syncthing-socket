@@ -1,46 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Only views RemoteViews supports: no Compose out here, and no custom views.
+  Deliberately passive: a label and a button, no status, nothing to refresh. Any tap
+  anywhere on it starts the unlock.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_background"
     android:padding="12dp">
 
-    <!-- Tapping the status row re-checks, so a glance never starts an unlock. -->
-    <LinearLayout
-        android:id="@+id/widget_status_row"
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="8dp">
-
-        <ImageView
-            android:id="@+id/widget_dot"
-            android:layout_width="12dp"
-            android:layout_height="12dp"
-            android:src="@drawable/dot_unknown"
-            android:contentDescription="@string/widget_status_description" />
-
-        <TextView
-            android:id="@+id/widget_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:textColor="#FFCCCCCC"
-            android:textSize="12sp"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:text="@string/entry_checking" />
-    </LinearLayout>
+        android:text="@string/app_name"
+        android:textColor="#FFCCCCCC"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingBottom="8dp" />
 
     <Button
         android:id="@+id/widget_unlock"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:minHeight="48dp"
         android:text="@string/unlock_button"
         android:textColor="#FF21005D"
