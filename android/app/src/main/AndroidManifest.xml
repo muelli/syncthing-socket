@@ -6,7 +6,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
-    <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <!-- Not required: pairing details can be typed in when there is no camera, and
+         requiring one keeps the app off devices that could otherwise run it. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.biometrics" android:required="false" />
 
     <application
@@ -24,7 +26,45 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- The shortcut, the widget and the tile all arrive here. The action only
+                 says "start the unlock"; it still has to get past the same
+                 authentication, so it grants nothing that opening the app would not. -->
+            <intent-filter>
+                <action android:name="com.github.muelli.syncthingsocket.action.UNLOCK" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Quick settings tile. The BIND_QUICK_SETTINGS_TILE permission is what stops
+             anything but the system binding to it. -->
+        <service
+            android:name=".UnlockTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_unlock"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home screen widget. -->
+        <receiver
+            android:name=".UnlockWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.github.muelli.syncthingsocket.action.REFRESH_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/unlock_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

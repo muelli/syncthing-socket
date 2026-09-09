@@ -2,6 +2,7 @@ package com.github.muelli.syncthingsocket
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
@@ -102,6 +103,16 @@ private sealed class UnlockUi {
 
     data class Failed(val category: String, val detail: String?) : UnlockUi()
 }
+
+/**
+ * The paired computer's Device ID, or null if this phone has no pairing.
+ *
+ * The widget and the tile need this and nothing else. It is the one part of a pairing that
+ * is public by design, so it lives outside the encrypted store and reading it prompts for
+ * nothing. The passphrase and the seed are not reachable from here.
+ */
+internal fun pairedDeviceId(context: Context): String? =
+    CredentialStore(context).publicDeviceId()
 
 private data class Pairing(val passphrase: String, val seed: String, val deviceId: String)
 
@@ -230,11 +241,21 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * Set when we arrived from the shortcut, the widget or the tile, and cleared once
+     * acted on. Guarded by savedInstanceState so a rotation does not re-prompt, and acted
+     * on in onResume because a biometric prompt cannot be raised before the activity is
+     * actually in front of the user.
+     */
+    private var pendingAutoUnlock = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
         store = CredentialStore(this)
         phase.value = startingPhase()
+        pendingAutoUnlock =
+            savedInstanceState == null && intent?.action == UnlockEntryPoints.ACTION_UNLOCK
 
         setContent {
             // The pairing screen puts the LUKS passphrase on the display. Block
@@ -543,6 +564,26 @@ class MainActivity : FragmentActivity() {
                 .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
                 .build()
         )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == UnlockEntryPoints.ACTION_UNLOCK) {
+            pendingAutoUnlock = true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!pendingAutoUnlock) return
+        pendingAutoUnlock = false
+        // Only when there is something to unlock with and nothing already in flight.
+        // Without a pairing the setup screen is the right destination, and the entry
+        // points deliberately do not skip it.
+        if (phase.value == Phase.Unlock && unlockUi.value is UnlockUi.Idle) {
+            startUnlock()
+        }
     }
 
     override fun onDestroy() {

@@ -90,6 +90,20 @@
         everyone, including this app, so pair again.</string>
     <string name="key_invalidated_action">Pair again</string>
 
+    <!-- Launcher shortcut, home screen widget and quick settings tile -->
+    <string name="shortcut_unlock_short">Unlock</string>
+    <string name="shortcut_unlock_long">Unlock your computer</string>
+    <string name="tile_label">Unlock computer</string>
+    <string name="widget_description">Unlock your computer, and see whether it is
+        waiting.</string>
+    <string name="widget_status_description">Whether your computer is waiting</string>
+    <string name="entry_checking">Checking…</string>
+    <string name="entry_waiting">Waiting to be unlocked</string>
+    <string name="entry_stale">Announced a while ago</string>
+    <string name="entry_absent">Not announcing itself</string>
+    <string name="entry_unknown">Cannot tell right now</string>
+    <string name="entry_not_paired">No computer paired yet</string>
+
     <!-- Camera -->
     <string name="camera_denied">Camera access is needed to scan the QR code. Grant it, or enter
         the details as text instead.</string>

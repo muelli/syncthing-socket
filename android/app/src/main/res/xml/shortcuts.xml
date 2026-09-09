@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Long-pressing the launcher icon offers the unlock directly. It is a static shortcut, so
+  it is present whether or not a pairing exists; with none, it opens the setup screen,
+  which is the same thing the app itself would do.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="unlock"
+        android:enabled="true"
+        android:icon="@drawable/ic_unlock"
+        android:shortcutShortLabel="@string/shortcut_unlock_short"
+        android:shortcutLongLabel="@string/shortcut_unlock_long">
+        <intent
+            android:action="com.github.muelli.syncthingsocket.action.UNLOCK"
+            android:targetPackage="com.github.muelli.syncthingsocket"
+            android:targetClass="com.github.muelli.syncthingsocket.MainActivity" />
+    </shortcut>
+</shortcuts>

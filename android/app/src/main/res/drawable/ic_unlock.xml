@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  An open padlock, at 24dp rather than a scaled-down launcher icon.
+
+  The launcher mark keeps its detail inside the central 66dp of a 108dp viewport, which
+  is right for a launcher and illegible in a quick settings tile or a shortcut badge. This
+  is drawn for the size it is actually used at.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+
+    <!-- body -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,10 L18,10 A2,2 0 0 1 20,12 L20,20 A2,2 0 0 1 18,22 L6,22 A2,2 0 0 1 4,20
+            L4,12 A2,2 0 0 1 6,10 Z" />
+    <!-- shackle, open and swung to the right -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M8,10 L8,7 A4,4 0 0 1 16,7 L16,9" />
+    <!-- keyhole -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,14 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M11.25,15 L12.75,15 L12.75,18.5 L11.25,18.5 Z" />
+</vector>
