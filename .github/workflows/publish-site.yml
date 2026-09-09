@@ -65,6 +65,12 @@ jobs:
 
       - name: Install tooling
         run: |
+          # The runner image preconfigures third-party apt repositories this project does
+          # not use, and a hash mismatch in any one of them makes apt-get update exit
+          # non-zero. Google's chrome repository did exactly that and failed a release.
+          # Keep Ubuntu's own archive, which on noble lives in sources.list.d as
+          # ubuntu.sources rather than in sources.list, and drop everything else.
+          sudo find /etc/apt/sources.list.d -type f ! -name ubuntu.sources -delete
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qrencode apt-utils dpkg-dev gnupg
           # Ubuntu's fdroidserver lags well behind; the release workflow already pip

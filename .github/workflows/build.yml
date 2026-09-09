@@ -136,6 +136,12 @@ jobs:
 
       - name: Install packaging tools
         run: |
+          # The runner image preconfigures third-party apt repositories this project does
+          # not use, and a hash mismatch in any one of them makes apt-get update exit
+          # non-zero. Google's chrome repository did exactly that and failed a release.
+          # Keep Ubuntu's own archive, which on noble lives in sources.list.d as
+          # ubuntu.sources rather than in sources.list, and drop everything else.
+          sudo find /etc/apt/sources.list.d -type f ! -name ubuntu.sources -delete
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends debhelper dpkg-dev fakeroot
 
@@ -301,6 +307,12 @@ jobs:
 
       - name: Verify F-Droid Freedom
         run: |
+          # The runner image preconfigures third-party apt repositories this project does
+          # not use, and a hash mismatch in any one of them makes apt-get update exit
+          # non-zero. Google's chrome repository did exactly that and failed a release.
+          # Keep Ubuntu's own archive, which on noble lives in sources.list.d as
+          # ubuntu.sources rather than in sources.list, and drop everything else.
+          sudo find /etc/apt/sources.list.d -type f ! -name ubuntu.sources -delete
           sudo apt-get update
           sudo apt-get install -y python3-pip
           pip install --break-system-packages fdroidserver
