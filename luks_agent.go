@@ -20,6 +20,7 @@ package socket
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,6 +50,21 @@ const (
 	// announcement takes 30 to 45 seconds to reach global discovery, so the key holder
 	// usually just is not listening yet.
 	agentRetryInterval = 5 * time.Second
+
+	// How long one attempt at fetching the passphrase may take before it is abandoned
+	// and started again.
+	//
+	// Without a bound the attempt can block for the rest of the boot. It is one
+	// subprocess serving one connection, so a peer that connects and then goes quiet, a
+	// phone that loses signal between dialling and answering, or an app killed with its
+	// prompt open, all leave the agent waiting on a read that will never finish. Nobody
+	// else can unlock the machine while that lasts, because there is no second attempt
+	// until the first returns. Observed on a real boot: one attempt held from 01:38 to
+	// 02:51 before anyone noticed.
+	//
+	// Generous on purpose. It has to cover a relay handshake plus a human picking up a
+	// phone, walking to it, and authenticating.
+	agentAttemptTimeout = 5 * time.Minute
 )
 
 // askRequest is one entry in the ask-password directory.
@@ -493,7 +509,13 @@ func fetchPassphrase(cfg *luksConfig) (string, error) {
 		return "", fmt.Errorf("unknown unlock role %q", cfg.Role)
 	}
 
-	cmd := exec.Command(self, args...)
+	// Bounded so a stalled attempt cannot own the rest of the boot. CommandContext kills
+	// the subprocess on expiry, which also drops its relay session rather than leaving it
+	// held open.
+	ctx, cancel := context.WithTimeout(context.Background(), agentAttemptTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, self, args...)
 	// This machine only ever receives, in both roles.
 	cmd.Stdin = nil
 	// Keep a copy of what the transfer said as well as showing it on the console.
@@ -506,6 +528,11 @@ func fetchPassphrase(cfg *luksConfig) (string, error) {
 	setChildProcAttrs(cmd)
 	out, err := cmd.Output()
 	if err != nil {
+		// Say which it was. "signal: killed" on its own reads like a crash, when it
+		// means the key holder never finished and we gave up on this attempt.
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("gave up after %s waiting for the key holder", agentAttemptTimeout)
+		}
 		if detail := lastLine(errBuf.String()); detail != "" {
 			return "", fmt.Errorf("%w: %s", err, detail)
 		}
