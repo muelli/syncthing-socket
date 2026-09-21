@@ -147,9 +147,7 @@ ID. Someone who reads it cannot impersonate your key holder.
 
 > **Two different secrets.** The LUKS passphrase is what unlocks the disk, and it travels
 > on stdin. The seed is what the two ends derive their Syncthing identities from, and it
-> goes to `--seed`. They are unrelated, and only one of them unlocks anything. The seed
-> used to be spelled `--passphrase`, which put both words on one command line meaning
-> different things; that spelling still works and warns.
+> goes to `--seed`. They are unrelated, and only one of them unlocks anything.
 
 ### Simpler: one shared seed
 
@@ -325,32 +323,6 @@ cryptsetup: cryptroot: set up successfully
 ```
 
 and carries on booting.
-
-### Upgrading a machine enrolled before the format was versioned
-
-A token written before the version field exists is refused, and both the agent and
-`syncthing-luks-setup` say so by name. The machine still boots; it just asks at the console
-instead of unlocking itself.
-
-Fixing it does not mean starting over. Read the existing values out of the header and write
-them back, which changes only the format:
-
-```bash
-sudo cryptsetup token export --token-id 0 /dev/nvme0n1p3
-```
-
-```bash
-sudo syncthing-luks-bind /dev/nvme0n1p3 "<p2p_key_seed from above>" "<key_holder_device_id from above>" server
-```
-
-```bash
-sudo dracut --force --regenerate-all    # or update-initramfs -u -k all
-```
-
-The seed and the Device ID are unchanged, so **an already-paired phone keeps working and
-does not need re-pairing**. Only the token's shape changed. The renamed pairing-code fields
-matter only when a phone scans a new code, because the app stores the values itself rather
-than re-reading the code.
 
 ### Re-enrolling a phone
 

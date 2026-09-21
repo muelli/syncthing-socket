@@ -29,7 +29,7 @@ func TestPipePayloadSurvivesStdinEOF(t *testing.T) {
 	passphrase := fmt.Sprintf("test-pipe-eof-%d", time.Now().UnixNano())
 	payload := "correct horse battery staple"
 
-	server := exec.Command(binary, "server", "--passphrase", passphrase,
+	server := exec.Command(binary, "server", "--seed", passphrase,
 		"--direct-port", "22010", "--discovery", "", "--relay", "",
 		"--log-level", "error", "--log-format", "text")
 	// Payload then immediate EOF, exactly like `printf %s secret | syncthing-socket server`.
@@ -48,7 +48,7 @@ func TestPipePayloadSurvivesStdinEOF(t *testing.T) {
 	}
 	defer devNull.Close()
 
-	client := exec.Command(binary, "client", "--passphrase", passphrase,
+	client := exec.Command(binary, "client", "--seed", passphrase,
 		"--relay", "tcp://127.0.0.1:22010", "--discovery", "",
 		"--log-level", "error", "--log-format", "text")
 	client.Stdin = devNull // the keyscript case: stdin is already at EOF

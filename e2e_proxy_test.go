@@ -61,7 +61,7 @@ func TestHTTPProxyRouting(t *testing.T) {
 
 	passphrase := fmt.Sprintf("test-proxy-passphrase-%d", time.Now().UnixNano())
 
-	cmdServer := exec.Command("./test-proxy-binary", "server", "--passphrase", passphrase, "--log-level", "debug", "--log-format", "text", "--discovery", "")
+	cmdServer := exec.Command("./test-proxy-binary", "server", "--seed", passphrase, "--log-level", "debug", "--log-format", "text", "--discovery", "")
 	cmdServer.Env = append(os.Environ(), "HTTP_PROXY=http://127.0.0.1:8888") // Inject proxy!
 	
 	// Watch stderr, not stdout. In plain pipe mode stdout carries the payload and nothing

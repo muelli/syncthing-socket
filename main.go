@@ -250,17 +250,13 @@ func Execute() {
 	}
 	serverCmd.Flags().StringVar(&serverCert, "cert", "", "Path to TLS certificate (optional)")
 	serverCmd.Flags().StringVar(&serverKey, "key", "", "Path to TLS key (optional)")
-	// --seed is the name; --passphrase is the old one, kept working for a release.
-	//
-	// It was never a passphrase. It is the seed both ends derive their transport
+	// --seed, not --passphrase. It is the seed both ends derive their transport
 	// identities from, and the project calls it a seed everywhere else: p2p_key_seed in
-	// the LUKS2 token, "your-key-seed" in the documentation. The old name was actively
-	// dangerous in the unlock case, where the documented command line reads
-	//   printf %s 'your-luks-passphrase' | syncthing-socket server --passphrase 'your-key-seed'
-	// and the two passphrases are different secrets, one of which unlocks your disk.
+	// the LUKS2 token, "your-key-seed" in the documentation. Calling it a passphrase was
+	// actively dangerous in the unlock case, where the command line reads
+	//   printf %s 'your-luks-passphrase' | syncthing-socket server --seed 'your-key-seed'
+	// and those are different secrets, only one of which unlocks your disk.
 	serverCmd.Flags().StringVar(&serverSeed, "seed", "", "Seed both ends derive their transport identity from")
-	serverCmd.Flags().StringVar(&serverSeed, "passphrase", "", "Deprecated alias for --seed")
-	_ = serverCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 	serverCmd.Flags().BoolVar(&serverSocks, "socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
 	serverCmd.Flags().BoolVar(&serverShell, "shell", false, "Start an interactive PTY shell server")
 	serverCmd.Flags().StringVar(&serverCommand, "command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
@@ -382,8 +378,6 @@ func Execute() {
 	clientCmd.Flags().StringVar(&clientCert, "cert", "", "Path to TLS certificate (optional)")
 	clientCmd.Flags().StringVar(&clientKey, "key", "", "Path to TLS key (optional)")
 	clientCmd.Flags().StringVar(&clientSeed, "seed", "", "Seed both ends derive their transport identity from")
-	clientCmd.Flags().StringVar(&clientSeed, "passphrase", "", "Deprecated alias for --seed")
-	_ = clientCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 	clientCmd.Flags().StringVar(&clientSocks, "socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
 	clientCmd.Flags().BoolVar(&clientShell, "shell", false, "Start an interactive PTY shell client")
 	clientCmd.Flags().StringVar(&clientReverseForward, "reverse-forward", "", "Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80)")
@@ -392,13 +386,10 @@ func Execute() {
 	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
 	clientCmd.Flags().StringVar(&clientLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientCmd.Flags().StringVar(&clientLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
-	// --totp-passcode, because --totp already means something else one command over:
-	// on the server it is a boolean switch that turns the requirement on, here it
-	// carried the six digits. One name for a switch and a value is a coin flip for
-	// whoever is reading a command line. The old spelling still works and warns.
+	// --totp-passcode, because --totp means something else one command over: on the
+	// server it is a boolean switch that turns the requirement on. One name for a
+	// switch and for a value is a coin flip for whoever is reading a command line.
 	clientCmd.Flags().StringVar(&clientTOTP, "totp-passcode", "", "6-digit TOTP passcode")
-	clientCmd.Flags().StringVar(&clientTOTP, "totp", "", "Deprecated alias for --totp-passcode")
-	_ = clientCmd.Flags().MarkDeprecated("totp", "use --totp-passcode instead; --totp is a switch on the server")
 
 	var idCmd = &cobra.Command{
 		Use:   "id",
@@ -444,8 +435,6 @@ func Execute() {
 		},
 	}
 	idCmd.Flags().StringVar(&idSeed, "seed", "", "Seed to compute the Syncthing Device IDs for")
-	idCmd.Flags().StringVar(&idSeed, "passphrase", "", "Deprecated alias for --seed")
-	_ = idCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 
 	installServiceCmd := &cobra.Command{
 		Use:   "install-service",

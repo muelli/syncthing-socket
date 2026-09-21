@@ -63,7 +63,7 @@ func TestForwardProxyProtocolV2(t *testing.T) {
 	directPort := "22004"
 
 	// 3. Start syncthing-socket server
-	cmdServer := exec.Command("./test-forward-binary", "server", "--passphrase", passphrase, "--forward", fmt.Sprintf("127.0.0.1:%d", backendPort), "--proxy-protocol", "--direct-port", directPort, "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-forward-binary", "server", "--seed", passphrase, "--forward", fmt.Sprintf("127.0.0.1:%d", backendPort), "--proxy-protocol", "--direct-port", directPort, "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -74,7 +74,7 @@ func TestForwardProxyProtocolV2(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// 4. Start syncthing-socket client
-	cmdClient := exec.Command("./test-forward-binary", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:"+directPort, "--discovery", "", "--log-level", "debug", "--log-format", "text")
+	cmdClient := exec.Command("./test-forward-binary", "client", "--seed", passphrase, "--relay", "tcp://127.0.0.1:"+directPort, "--discovery", "", "--log-level", "debug", "--log-format", "text")
 
 	stdinRead, stdinWrite := io.Pipe()
 	cmdClient.Stdin = stdinRead
@@ -167,7 +167,7 @@ func TestForwardUnixSocket(t *testing.T) {
 	passphrase := fmt.Sprintf("test-forward-unix-passphrase-%d", time.Now().UnixNano())
 	directPort := "22006"
 
-	cmdServer := exec.Command("./test-forward-binary", "server", "--passphrase", passphrase, "--forward", "unix://"+socketPath, "--proxy-protocol", "--direct-port", directPort, "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-forward-binary", "server", "--seed", passphrase, "--forward", "unix://"+socketPath, "--proxy-protocol", "--direct-port", directPort, "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -177,7 +177,7 @@ func TestForwardUnixSocket(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	cmdClient := exec.Command("./test-forward-binary", "client", "--passphrase", passphrase, "--relay", "tcp://127.0.0.1:"+directPort, "--discovery", "", "--log-level", "debug", "--log-format", "text")
+	cmdClient := exec.Command("./test-forward-binary", "client", "--seed", passphrase, "--relay", "tcp://127.0.0.1:"+directPort, "--discovery", "", "--log-level", "debug", "--log-format", "text")
 
 	stdinRead, stdinWrite := io.Pipe()
 	cmdClient.Stdin = stdinRead

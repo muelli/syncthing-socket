@@ -172,7 +172,7 @@ func parseLUKSToken(raw []byte) (*luksConfig, error) {
 	if tok.Version != luksTokenVersion {
 		if tok.Version == 0 {
 			return nil, fmt.Errorf(
-				"this %s token predates the versioned format; re-run syncthing-luks-bind",
+				"this %s token carries no version; re-run syncthing-luks-bind to write one",
 				luksTokenType)
 		}
 		return nil, fmt.Errorf(

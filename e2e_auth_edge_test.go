@@ -28,7 +28,7 @@ func TestAuthorizedClientsSpaceParsing(t *testing.T) {
 	runClientTest := func(clientPass string, shouldSucceed bool) {
 		cmdServer := exec.Command(
 			"./test-auth-binary", "server",
-			"--passphrase", "server-space-pass",
+			"--seed", "server-space-pass",
 			"--command", "echo 'space parsing success' && sleep 0.5",
 			"--direct-port", "22013",
 			"--discovery", "",
@@ -54,7 +54,7 @@ func TestAuthorizedClientsSpaceParsing(t *testing.T) {
 
 		cmdClient := exec.Command(
 			"./test-auth-binary", "client",
-			"--passphrase", clientPass,
+			"--seed", clientPass,
 			"--relay", "tcp://127.0.0.1:22013",
 			"--discovery", "",
 			serverDevID,
@@ -98,7 +98,7 @@ func TestAuthorizedClientsWhitespaceInput(t *testing.T) {
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-ws-pass",
+		"--seed", "server-ws-pass",
 		"--command", "echo 'whitespace input allowed' && sleep 0.5",
 		"--direct-port", "22014",
 		"--discovery", "",
@@ -123,7 +123,7 @@ func TestAuthorizedClientsWhitespaceInput(t *testing.T) {
 	serverDevID := getServerDeviceID(t, "server-ws-pass")
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", clientPass,
+		"--seed", clientPass,
 		"--relay", "tcp://127.0.0.1:22014",
 		"--discovery", "",
 		serverDevID,
@@ -150,7 +150,7 @@ func TestInvalidDeviceIDFormatOnStartup(t *testing.T) {
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-invalid-pass",
+		"--seed", "server-invalid-pass",
 		"--direct-port", "22015",
 		"--authorized-clients", "INVALID-DEVICE-ID-FORMAT",
 		"--log-format", "text",

@@ -91,7 +91,7 @@ if [ "$REPRINT" = yes ]; then
     version=$(printf '%s' "$TOKEN" | tr -d '\n' |
         sed -n 's/.*"version"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')
     if [ "$version" != "1" ]; then
-        echo "Error: the syncthing-socket token on $DEVICE is version ${version:-unversioned}," >&2
+        echo "Error: the syncthing-socket token on $DEVICE is version ${version:-absent}," >&2
         echo "and this tool writes and reads version 1. Re-run without --reprint to" >&2
         echo "replace it, which mints a fresh seed and needs a re-bind." >&2
         exit 1

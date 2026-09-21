@@ -32,7 +32,7 @@ func TestServerReceivesPayloadFromClient(t *testing.T) {
 	}
 	defer devNull.Close()
 
-	server := exec.Command(binary, "server", "--passphrase", passphrase,
+	server := exec.Command(binary, "server", "--seed", passphrase,
 		"--direct-port", "22011", "--discovery", "", "--relay", "",
 		"--log-level", "error", "--log-format", "text")
 	server.Stdin = devNull // the booting machine has nothing to send
@@ -46,7 +46,7 @@ func TestServerReceivesPayloadFromClient(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	client := exec.Command(binary, "client", "--passphrase", passphrase,
+	client := exec.Command(binary, "client", "--seed", passphrase,
 		"--relay", "tcp://127.0.0.1:22011", "--discovery", "",
 		"--log-level", "error", "--log-format", "text")
 	client.Stdin = bytes.NewBufferString(payload)
@@ -104,7 +104,7 @@ func TestServerStdoutCarriesOnlyThePayload(t *testing.T) {
 
 	// --log-level info deliberately: the banner and the relay/discovery chatter must still
 	// be produced, just never on stdout.
-	server := exec.Command(binary, "server", "--passphrase", passphrase,
+	server := exec.Command(binary, "server", "--seed", passphrase,
 		"--direct-port", "22012", "--discovery", "", "--relay", "",
 		"--log-level", "info", "--log-format", "text")
 	server.Stdin = devNull
@@ -118,7 +118,7 @@ func TestServerStdoutCarriesOnlyThePayload(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	client := exec.Command(binary, "client", "--passphrase", passphrase,
+	client := exec.Command(binary, "client", "--seed", passphrase,
 		"--relay", "tcp://127.0.0.1:22012", "--discovery", "",
 		"--log-level", "error", "--log-format", "text")
 	client.Stdin = bytes.NewBufferString(payload)

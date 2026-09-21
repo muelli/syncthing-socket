@@ -65,7 +65,7 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-auth-pass-1",
+		"--seed", "server-auth-pass-1",
 		"--authorized-clients", "7SGFZYR-DXPRRF5-6QVKNME-XNUMTDU-XJ5KSHQ-HVCYWWU-XJDBIYB-TKWLDAJ", // Random dummy ID
 		"--command", "echo 'should not print'",
 		"--direct-port", "22010",
@@ -93,7 +93,7 @@ func TestUnauthorizedClientDropped(t *testing.T) {
 
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", "client-unauthorized-pass",
+		"--seed", "client-unauthorized-pass",
 		"--relay", "tcp://127.0.0.1:22010",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -136,7 +136,7 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-auth-pass-2",
+		"--seed", "server-auth-pass-2",
 		"--authorized-clients", clientDevID,
 		"--command", "echo 'authorized client success' && sleep 0.5",
 		"--direct-port", "22011",
@@ -164,7 +164,7 @@ func TestAuthorizedClientSucceeds(t *testing.T) {
 
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", clientPass,
+		"--seed", clientPass,
 		"--relay", "tcp://127.0.0.1:22011",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -213,7 +213,7 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-auth-pass-3",
+		"--seed", "server-auth-pass-3",
 		"--command", "echo 'default no auth flag success' && sleep 0.5",
 		"--direct-port", "22012",
 		"--discovery", "",
@@ -240,7 +240,7 @@ func TestClientWithoutAuthorizedClientsFlagSucceeds(t *testing.T) {
 
 	cmdClient := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", clientPass,
+		"--seed", clientPass,
 		"--relay", "tcp://127.0.0.1:22012",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -287,7 +287,7 @@ func TestTOTPAuthenticationFailure(t *testing.T) {
 	secret := "JBSWY3DPEHPK3PXP"
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-totp-fail",
+		"--seed", "server-totp-fail",
 		"--totp-secret", secret,
 		"--command", "echo 'should not execute'",
 		"--direct-port", "22015",
@@ -315,8 +315,8 @@ func TestTOTPAuthenticationFailure(t *testing.T) {
 
 	cmdClientFail := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", "client-totp-fail",
-		"--totp", "000000",
+		"--seed", "client-totp-fail",
+		"--totp-passcode", "000000",
 		"--relay", "tcp://127.0.0.1:22015",
 		"--discovery", "",
 		"--log-level", "debug",
@@ -337,7 +337,7 @@ func TestTOTPAuthenticationSuccess(t *testing.T) {
 	secret := "JBSWY3DPEHPK3PXP"
 	cmdServer := exec.Command(
 		"./test-auth-binary", "server",
-		"--passphrase", "server-totp-success",
+		"--seed", "server-totp-success",
 		"--totp-secret", secret,
 		"--command", "echo 'totp success' && sleep 0.5",
 		"--direct-port", "22016",
@@ -370,8 +370,8 @@ func TestTOTPAuthenticationSuccess(t *testing.T) {
 
 	cmdClientSuccess := exec.Command(
 		"./test-auth-binary", "client",
-		"--passphrase", "client-totp-success",
-		"--totp", code,
+		"--seed", "client-totp-success",
+		"--totp-passcode", code,
 		"--relay", "tcp://127.0.0.1:22016",
 		"--discovery", "",
 		"--log-level", "debug",

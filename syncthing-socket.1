@@ -37,7 +37,7 @@ Path to a custom TLS certificate (optional).
 Path to a custom TLS key (optional).
 .TP
 .BR \-\-seed " \fISTRING\fR"
-Seed that both ends derive their transport identity from. The Device ID and the TLS certificate are generated deterministically from it, so two peers given the same seed find and authenticate each other with nothing else configured. It is not a passphrase, and in particular it is not the LUKS passphrase in the disk-unlock use case; \-\-passphrase is a deprecated alias that still works and warns.
+Seed that both ends derive their transport identity from. The Device ID and the TLS certificate are generated deterministically from it, so two peers given the same seed find and authenticate each other with nothing else configured. It is not a passphrase, and in particular it is not the LUKS passphrase in the disk-unlock use case.
 .TP
 .B \-\-socks
 Start a remote SOCKS5 proxy server. The client must also specify \-\-socks to multiplex traffic over the tunnel.

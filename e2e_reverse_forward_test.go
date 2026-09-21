@@ -52,7 +52,7 @@ func TestReverseForwardP2P(t *testing.T) {
 	serverBindListener.Close() // Free it so the server can bind it
 
 	// 3. Start Server with --reverse-forward
-	cmdServer := exec.Command("./test-revfwd-binary", "server", "--passphrase", passphrase, "--reverse-forward", serverBindAddr, "--direct-port", "22005", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-revfwd-binary", "server", "--seed", passphrase, "--reverse-forward", serverBindAddr, "--direct-port", "22005", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -64,7 +64,7 @@ func TestReverseForwardP2P(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// 4. Start Client with --reverse-forward
-	cmdClient := exec.Command("./test-revfwd-binary", "client", "--passphrase", passphrase, "--reverse-forward", mockTargetAddr, "--relay", "tcp://127.0.0.1:22005", "--discovery", "", "--log-level", "debug", "--log-format", "text")
+	cmdClient := exec.Command("./test-revfwd-binary", "client", "--seed", passphrase, "--reverse-forward", mockTargetAddr, "--relay", "tcp://127.0.0.1:22005", "--discovery", "", "--log-level", "debug", "--log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 
@@ -134,7 +134,7 @@ func TestReverseForwardUnixSocket(t *testing.T) {
 	_ = os.Remove(serverSocketPath)
 	defer os.Remove(serverSocketPath)
 
-	cmdServer := exec.Command("./test-revfwd-binary", "server", "--passphrase", passphrase, "--reverse-forward", "unix://"+serverSocketPath, "--direct-port", "22007", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
+	cmdServer := exec.Command("./test-revfwd-binary", "server", "--seed", passphrase, "--reverse-forward", "unix://"+serverSocketPath, "--direct-port", "22007", "--discovery", "", "--relay", "", "--log-level", "debug", "--log-format", "text")
 	cmdServer.Stdout = os.Stdout
 	cmdServer.Stderr = os.Stderr
 	if err := cmdServer.Start(); err != nil {
@@ -144,7 +144,7 @@ func TestReverseForwardUnixSocket(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	cmdClient := exec.Command("./test-revfwd-binary", "client", "--passphrase", passphrase, "--reverse-forward", "unix://"+clientSocketPath, "--relay", "tcp://127.0.0.1:22007", "--discovery", "", "--log-level", "debug", "--log-format", "text")
+	cmdClient := exec.Command("./test-revfwd-binary", "client", "--seed", passphrase, "--reverse-forward", "unix://"+clientSocketPath, "--relay", "tcp://127.0.0.1:22007", "--discovery", "", "--log-level", "debug", "--log-format", "text")
 	cmdClient.Stdout = os.Stdout
 	cmdClient.Stderr = os.Stderr
 
