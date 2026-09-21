@@ -131,19 +131,19 @@ func (a *askRequest) wantsCryptsetup() bool {
 // luksConfig is the unlock configuration, from the LUKS2 header or from luks.conf. It
 // mirrors what contrib/initramfs-luks/syncthing-socket-initramfs-top reads.
 type luksConfig struct {
-	Device             string
-	Seed               string `json:"p2p_key_seed"`
-	KeyBearingDeviceID string `json:"key_bearing_device_id"`
-	Role               string `json:"unlock_role"`
+	Device            string
+	Seed              string `json:"p2p_key_seed"`
+	KeyHolderDeviceID string `json:"key_holder_device_id"`
+	Role              string `json:"unlock_role"`
 }
 
 // luksToken is the shape syncthing-luks-bind writes into the header.
 type luksToken struct {
-	Type               string `json:"type"`
-	Version            int    `json:"version"`
-	Seed               string `json:"p2p_key_seed"`
-	KeyBearingDeviceID string `json:"key_bearing_device_id"`
-	Role               string `json:"unlock_role"`
+	Type              string `json:"type"`
+	Version           int    `json:"version"`
+	Seed              string `json:"p2p_key_seed"`
+	KeyHolderDeviceID string `json:"key_holder_device_id"`
+	Role              string `json:"unlock_role"`
 }
 
 const luksTokenType = "syncthing-socket"
@@ -190,9 +190,9 @@ func parseLUKSToken(raw []byte) (*luksConfig, error) {
 		return nil, fmt.Errorf("unknown unlock_role %q", role)
 	}
 	return &luksConfig{
-		Seed:               tok.Seed,
-		KeyBearingDeviceID: tok.KeyBearingDeviceID,
-		Role:               role,
+		Seed:              tok.Seed,
+		KeyHolderDeviceID: tok.KeyHolderDeviceID,
+		Role:              role,
 	}, nil
 }
 
@@ -215,8 +215,8 @@ func parseLuksConf(r io.Reader) (*luksConfig, error) {
 		switch strings.TrimSpace(key) {
 		case "P2P_KEY_SEED":
 			cfg.Seed = value
-		case "KEY_BEARING_DEVICE_ID":
-			cfg.KeyBearingDeviceID = value
+		case "KEY_HOLDER_DEVICE_ID":
+			cfg.KeyHolderDeviceID = value
 		case "UNLOCK_ROLE":
 			if value != "" {
 				cfg.Role = value
@@ -516,16 +516,16 @@ func fetchPassphrase(cfg *luksConfig) (string, error) {
 	case "server":
 		// Announce and wait for the key holder to connect and push the passphrase.
 		// Here the Device ID names who we accept rather than who we dial.
-		if cfg.KeyBearingDeviceID != "" {
-			args = append(args, "--authorized-clients", cfg.KeyBearingDeviceID)
+		if cfg.KeyHolderDeviceID != "" {
+			args = append(args, "--authorized-clients", cfg.KeyHolderDeviceID)
 		}
 		// Announce often while waiting, so the key holder can tell from the record's
 		// timestamp that this machine is still at its prompt. The default interval is
 		// far too lazy for that; see UnlockAnnounceInterval.
 		args = append(args, "--announce-interval", UnlockAnnounceInterval.String())
 	case "client":
-		if cfg.KeyBearingDeviceID != "" {
-			args = append(args, cfg.KeyBearingDeviceID)
+		if cfg.KeyHolderDeviceID != "" {
+			args = append(args, cfg.KeyHolderDeviceID)
 		}
 	default:
 		return "", fmt.Errorf("unknown unlock role %q", cfg.Role)

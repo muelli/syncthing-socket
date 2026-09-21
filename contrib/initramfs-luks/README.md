@@ -174,7 +174,7 @@ sudo cryptsetup token export --token-id 0 /dev/nvme0n1p3
 
 ```json
 {"type":"syncthing-socket","keyslots":[],"version":1,
- "p2p_key_seed":"...","key_bearing_device_id":"...","unlock_role":"server"}
+ "p2p_key_seed":"...","key_holder_device_id":"...","unlock_role":"server"}
 ```
 
 `version` is checked on every read. The type name alone does not say what the rest of the
@@ -192,7 +192,7 @@ takes precedence over the token:
 
 ```sh
 P2P_KEY_SEED="..."
-KEY_BEARING_DEVICE_ID="..."   # optional
+KEY_HOLDER_DEVICE_ID="..."   # optional
 UNLOCK_ROLE="client"          # or "server"
 ```
 
@@ -340,7 +340,7 @@ sudo cryptsetup token export --token-id 0 /dev/nvme0n1p3
 ```
 
 ```bash
-sudo syncthing-luks-bind /dev/nvme0n1p3 "<p2p_key_seed from above>" "<key_bearing_device_id from above>" server
+sudo syncthing-luks-bind /dev/nvme0n1p3 "<p2p_key_seed from above>" "<key_holder_device_id from above>" server
 ```
 
 ```bash
@@ -413,7 +413,7 @@ The machine keeps retrying, so you can take your time. In order of likelihood:
   system.
 - **Wrong pairing.** Confirm the phone's Device ID matches what the header authorises:
   `syncthing-socket id --seed "<seed>"` prints the Client ID, which must equal
-  `key_bearing_device_id` in the token.
+  `key_holder_device_id` in the token.
 
 You always have the fallbacks below: the console prompt and `cryptroot-unlock` both keep
 working, because this integration races cryptsetup's own prompt rather than replacing it.

@@ -56,7 +56,7 @@ get_askpass() {
 # token written by syncthing-luks-bind.
 read_config() {
 	P2P_KEY_SEED=""
-	KEY_BEARING_DEVICE_ID=""
+	KEY_HOLDER_DEVICE_ID=""
 	UNLOCK_ROLE="client"
 
 	if [ -r /etc/syncthing-socket/luks.conf ]; then
@@ -85,8 +85,8 @@ read_config() {
 			fi
 			P2P_KEY_SEED=$(printf %s "$token_json" |
 				sed -n 's/.*"p2p_key_seed"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-			KEY_BEARING_DEVICE_ID=$(printf %s "$token_json" |
-				sed -n 's/.*"key_bearing_device_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+			KEY_HOLDER_DEVICE_ID=$(printf %s "$token_json" |
+				sed -n 's/.*"key_holder_device_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 			role=$(printf %s "$token_json" |
 				sed -n 's/.*"unlock_role"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 			[ -n "$role" ] && UNLOCK_ROLE="$role"
@@ -163,15 +163,15 @@ unlock_loop() {
 		# keeps stdout for the payload alone, so $(...) captures exactly the passphrase.
 		if [ "$UNLOCK_ROLE" = "server" ]; then
 			# Announce and wait for the key holder to connect and push the passphrase.
-			# Here KEY_BEARING_DEVICE_ID is who we accept rather than who we dial; in
+			# Here KEY_HOLDER_DEVICE_ID is who we accept rather than who we dial; in
 			# both roles it names the same thing, the device holding the passphrase.
 			# --announce-interval is short on purpose: the key holder decides
 			# whether this machine is still waiting from the discovery record's
 			# timestamp, and the default interval refreshes it far too rarely to
 			# tell "waiting now" from "finished booting twenty minutes ago".
-			if [ -n "$KEY_BEARING_DEVICE_ID" ]; then
+			if [ -n "$KEY_HOLDER_DEVICE_ID" ]; then
 				KEY=$("$SYNCTHING_SOCKET_BIN" server --seed "$P2P_KEY_SEED" \
-					--authorized-clients "$KEY_BEARING_DEVICE_ID" \
+					--authorized-clients "$KEY_HOLDER_DEVICE_ID" \
 					--announce-interval 60s \
 					--log-level error < /dev/null 2>/dev/console)
 			else
@@ -179,9 +179,9 @@ unlock_loop() {
 					--announce-interval 60s \
 					--log-level error < /dev/null 2>/dev/console)
 			fi
-		elif [ -n "$KEY_BEARING_DEVICE_ID" ]; then
+		elif [ -n "$KEY_HOLDER_DEVICE_ID" ]; then
 			KEY=$("$SYNCTHING_SOCKET_BIN" client --seed "$P2P_KEY_SEED" \
-				--log-level error "$KEY_BEARING_DEVICE_ID" < /dev/null 2>/dev/console)
+				--log-level error "$KEY_HOLDER_DEVICE_ID" < /dev/null 2>/dev/console)
 		else
 			KEY=$("$SYNCTHING_SOCKET_BIN" client --seed "$P2P_KEY_SEED" \
 				--log-level error < /dev/null 2>/dev/console)

@@ -88,7 +88,7 @@ func TestOnlyCryptsetupRequestsAreAnswered(t *testing.T) {
 
 func TestParseLUKSToken(t *testing.T) {
 	ours := []byte(`{"type":"syncthing-socket","keyslots":[],"version":1,` +
-		`"p2p_key_seed":"c2VlZA==","key_bearing_device_id":"AAAA-BBBB","unlock_role":"server"}`)
+		`"p2p_key_seed":"c2VlZA==","key_holder_device_id":"AAAA-BBBB","unlock_role":"server"}`)
 	cfg, err := parseLUKSToken(ours)
 	if err != nil {
 		t.Fatalf("parseLUKSToken: %v", err)
@@ -96,7 +96,7 @@ func TestParseLUKSToken(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("our own token was not recognised")
 	}
-	if cfg.Seed != "c2VlZA==" || cfg.KeyBearingDeviceID != "AAAA-BBBB" || cfg.Role != "server" {
+	if cfg.Seed != "c2VlZA==" || cfg.KeyHolderDeviceID != "AAAA-BBBB" || cfg.Role != "server" {
 		t.Errorf("token parsed as %+v", cfg)
 	}
 }
@@ -115,7 +115,7 @@ func TestParseLUKSTokenIgnoresOtherTypes(t *testing.T) {
 
 func TestParseLUKSTokenRejectsUnusable(t *testing.T) {
 	for name, raw := range map[string]string{
-		"no seed":  `{"type":"syncthing-socket","version":1,"key_bearing_device_id":"X"}`,
+		"no seed":  `{"type":"syncthing-socket","version":1,"key_holder_device_id":"X"}`,
 		"bad role": `{"type":"syncthing-socket","version":1,"p2p_key_seed":"s","unlock_role":"sideways"}`,
 		"garbage":  `{"type":`,
 	} {
@@ -142,7 +142,7 @@ func TestParseLUKSTokenDefaultsToClient(t *testing.T) {
 func TestParseLuksConfStripsQuotes(t *testing.T) {
 	conf := `# the unlock configuration
 P2P_KEY_SEED="c2VlZA=="
-KEY_BEARING_DEVICE_ID='AAAA-BBBB'
+KEY_HOLDER_DEVICE_ID='AAAA-BBBB'
 UNLOCK_ROLE=server
 `
 	cfg, err := parseLuksConf(strings.NewReader(conf))
@@ -155,8 +155,8 @@ UNLOCK_ROLE=server
 	if cfg.Seed != "c2VlZA==" {
 		t.Errorf("seed = %q, want c2VlZA==", cfg.Seed)
 	}
-	if cfg.KeyBearingDeviceID != "AAAA-BBBB" {
-		t.Errorf("device id = %q, want AAAA-BBBB", cfg.KeyBearingDeviceID)
+	if cfg.KeyHolderDeviceID != "AAAA-BBBB" {
+		t.Errorf("device id = %q, want AAAA-BBBB", cfg.KeyHolderDeviceID)
 	}
 	if cfg.Role != "server" {
 		t.Errorf("role = %q, want server", cfg.Role)
@@ -272,7 +272,7 @@ func TestFindLUKSConfigScansDevices(t *testing.T) {
 		tokens: map[string]string{
 			"/dev/vdb:0": `{"type":"clevis","keyslots":["1"]}`,
 			"/dev/vdb:2": `{"type":"syncthing-socket","version":1,"p2p_key_seed":"c2VlZA==",` +
-				`"key_bearing_device_id":"AAAA-BBBB","unlock_role":"server"}`,
+				`"key_holder_device_id":"AAAA-BBBB","unlock_role":"server"}`,
 		},
 	}
 
