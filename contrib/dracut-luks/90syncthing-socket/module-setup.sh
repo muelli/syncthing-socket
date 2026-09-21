@@ -12,8 +12,33 @@
 
 # shellcheck disable=SC2154
 
+# Where the binary may be, in the order we prefer. The packages install it in /usr/bin;
+# "just install" uses PREFIX=/usr/local and so puts it in /usr/local/bin.
+syncthing_socket_path() {
+    local candidate
+    candidate=$(command -v syncthing-socket 2> /dev/null)
+    if [ -n "$candidate" ]; then
+        echo "$candidate"
+        return 0
+    fi
+    for candidate in /usr/local/sbin/syncthing-socket /usr/local/bin/syncthing-socket \
+        /usr/sbin/syncthing-socket /usr/bin/syncthing-socket; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 check() {
-    require_binaries syncthing-socket || return 1
+    # Deliberately not "require_binaries syncthing-socket", which resolves through PATH.
+    # An initrd is usually rebuilt from a maintainer script or a kernel hook, and those
+    # run with a PATH that excludes /usr/local/bin. A source install lands there, so
+    # check() returned 1, dracut omitted the module without saying anything, and the next
+    # kernel upgrade quietly produced an initrd with no agent in it. The machine then
+    # boots to a console prompt with nothing explaining why.
+    syncthing_socket_path > /dev/null || return 1
     return 0
 }
 
@@ -26,7 +51,9 @@ depends() {
 }
 
 install() {
-    inst_binary syncthing-socket
+    # Install the copy check() found, and always at the same path inside the initrd, so
+    # the hook does not have to search again at boot.
+    inst_binary "$(syncthing_socket_path)" /usr/bin/syncthing-socket
 
     # 70crypt installs the cryptsetup binary only on its non-systemd branch: with systemd
     # present it installs dracut-crypt-generator and relies on systemd-cryptsetup instead.
