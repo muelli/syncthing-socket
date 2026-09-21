@@ -2,6 +2,9 @@ package socket
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +66,62 @@ func TestAnnounceAddressesHandlesNoRelay(t *testing.T) {
 	// A relay client that has not connected yet must not contribute an address.
 	if got := announceAddresses(&fakeRelay{}, 0, 0); len(got) != 0 {
 		t.Fatalf("expected nothing before the relay connects, got %v", got)
+	}
+}
+
+// The invitations channel the relay client hands out is created with make() and is never
+// closed by anything upstream, so a loop that waits only on it, treating a closed channel
+// as "the relay is gone", waits forever once Serve gives up. This pins that property: if a
+// future upstream ever does close it, the "ok" check becomes reachable and this test is
+// the place to notice.
+func TestRelayInvitationsChannelIsNeverClosedUpstream(t *testing.T) {
+	root := "vendor/github.com/syncthing/syncthing/lib/relay/client"
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Skipf("vendored relay client not present: %v", err)
+	}
+
+	found := false
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(root, entry.Name()))
+		if err != nil {
+			t.Fatalf("reading %s: %v", entry.Name(), err)
+		}
+		if strings.Contains(string(body), "invitations") {
+			found = true
+		}
+		if strings.Contains(string(body), "close(c.invitations)") ||
+			strings.Contains(string(body), "close(invitations)") {
+			t.Fatalf("%s now closes the invitations channel. The server's "+
+				"invitation loops assume it never does and rely on watching "+
+				"Serve's return instead; revisit that now it is reachable.",
+				entry.Name())
+		}
+	}
+	if !found {
+		t.Fatal("no invitations channel found in the vendored relay client, so this " +
+			"test is no longer checking what it claims to")
+	}
+}
+
+// The server must notice when the relay client gives up. Without it the process keeps
+// looking like a listening server while being unreachable, and its discovery record goes
+// stale, which for a machine at its LUKS prompt means nobody can unlock it.
+func TestServerWatchesForTheRelayClientStopping(t *testing.T) {
+	body, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	src := string(body)
+
+	if !strings.Contains(src, "relayStopped <- err") {
+		t.Error("Serve's return value is not published anywhere, so nothing can react to it")
+	}
+	// Both invitation loops, the forwarding one and the netcat one, need to watch it.
+	if n := strings.Count(src, "case err := <-relayStopped:"); n != 2 {
+		t.Errorf("%d invitation loops watch for the relay stopping, want 2", n)
 	}
 }

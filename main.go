@@ -678,6 +678,108 @@ func lookup(ctx context.Context, serverID string, discoveryServer string) ([]str
 	return lr.Addresses, nil
 }
 
+// relayRaceResult is one racer's outcome in dialFastestRelay.
+type relayRaceResult struct {
+	conn  net.Conn
+	relay string
+	err   error
+}
+
+// dialFastestRelay races every advertised relay and takes the first session.
+//
+// They are raced rather than tried in turn because global discovery merges announcements
+// instead of replacing them: a device accumulates every relay it has ever announced from,
+// and only the newest is alive. Measured on the public servers, a record grew from one
+// address to two after a single restart. Serially each dead entry costs the full
+// invitation timeout before the live one is reached, so the wait grows with every boot the
+// machine has ever done. During a LUKS unlock that is a machine sitting at its prompt for
+// no reason.
+//
+// Late winners are closed rather than leaked: an invitation that arrives after somebody
+// else has won is a real joined session, and dropping it on the floor would hold a session
+// open on the relay and a socket here.
+func dialFastestRelay(
+	ctx context.Context,
+	relayAddresses []string,
+	serverID syncthingprotocol.DeviceID,
+	cert tls.Certificate,
+) (net.Conn, error) {
+	// Cancelled as soon as one wins, so the losers stop waiting out their timeouts.
+	raceCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan relayRaceResult, len(relayAddresses))
+
+	started := 0
+	for _, relayURI := range relayAddresses {
+		u, err := url.Parse(relayURI)
+		if err != nil {
+			slog.Debug("Skipping unparsable relay URI", "relay", relayURI, "error", err)
+			continue
+		}
+		started++
+		go func(u *url.URL) {
+			slog.Info("Requesting session invitation from relay",
+				"relay", u.String(), "serverID", serverID.String())
+			invitation, err := client.GetInvitationFromRelay(
+				raceCtx, u, serverID, []tls.Certificate{cert}, 15*time.Second)
+			if err != nil {
+				results <- relayRaceResult{relay: u.Host, err: fmt.Errorf(
+					"failed to get invitation from relay %s: %w", u.Host, err)}
+				return
+			}
+			conn, err := client.JoinSession(raceCtx, invitation)
+			if err != nil {
+				results <- relayRaceResult{relay: u.Host, err: fmt.Errorf(
+					"failed to join session on relay %s: %w", u.Host, err)}
+				return
+			}
+			results <- relayRaceResult{conn: conn, relay: u.Host}
+		}(u)
+	}
+
+	if started == 0 {
+		return nil, fmt.Errorf("no usable relay addresses to try")
+	}
+
+	var lastErr error
+	for i := 0; i < started; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case r := <-results:
+			if r.err != nil {
+				lastErr = r.err
+				slog.Info("Relay did not offer a session",
+					"relay", r.relay, "error", r.err)
+				continue
+			}
+			slog.Info("Joined relay session", "relay", r.relay)
+			// Cancel the rest, then drain so any session that was already on its
+			// way is closed rather than left held open on the relay.
+			cancel()
+			go drainLateSessions(results, started-i-1)
+			return r.conn, nil
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no relay offered a session")
+	}
+	return nil, lastErr
+}
+
+// drainLateSessions closes connections from racers that finished after the winner.
+func drainLateSessions(results <-chan relayRaceResult, remaining int) {
+	for i := 0; i < remaining; i++ {
+		r := <-results
+		if r.conn != nil {
+			slog.Debug("Closing a relay session that arrived after the winner",
+				"relay", r.relay)
+			r.conn.Close()
+		}
+	}
+}
+
 func runServer(ctx context.Context, cert tls.Certificate, relayURI string, discoveryServers []string, forwardAddr string, directPort int, isSocks bool, isShell bool, isCommand string, proxyProtocol bool, reverseForward string, authorizedClients []syncthingprotocol.DeviceID, totpSecret string) error {
 	u, err := url.Parse(relayURI)
 	if err != nil {
@@ -718,6 +820,11 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 	}
 
 	var relayClient client.RelayClient
+
+	// Closed over by both invitation loops below, so it has to outlive the block that
+	// starts the relay client. Buffered so the send never blocks, and left silent when
+	// there is no relay client at all, in which case the select case simply never fires.
+	relayStopped := make(chan error, 1)
 	var connectedURI *url.URL
 
 	if relayURI != "" {
@@ -730,9 +837,11 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 		systemdNotify("STATUS=Connecting to relay...")
 
 		go func() {
-			if err := relayClient.Serve(ctx); err != nil {
+			err := relayClient.Serve(ctx)
+			if err != nil {
 				slog.Error("Relay client stopped", "error", err)
 			}
+			relayStopped <- err
 		}()
 
 		for {
@@ -807,6 +916,19 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 			invs := relayClient.Invitations()
 			for {
 				select {
+				case err := <-relayStopped:
+					// The invitations channel is created with make() and never
+					// closed by the relay client, so the "ok" check below can never
+					// fire. Waiting on it alone means that when Serve gives up, this
+					// loop blocks forever on a channel nobody will ever write to: the
+					// process looks like it is listening, announces nothing because
+					// URI() is now nil, and its discovery record goes stale. For an
+					// unlock that is a machine stuck at its prompt and unreachable.
+					// Fail instead, and let the caller build a new client.
+					if err != nil {
+						return fmt.Errorf("relay client stopped: %w", err)
+					}
+					return fmt.Errorf("relay client stopped")
 				case inv, ok := <-invs:
 					if !ok {
 						return fmt.Errorf("invitations channel closed")
@@ -854,6 +976,13 @@ func runServer(ctx context.Context, cert tls.Certificate, relayURI string, disco
 				invs := relayClient.Invitations()
 				for {
 					select {
+					case err := <-relayStopped:
+						// Same reason as the forwarding loop above: nothing ever
+						// closes the invitations channel, so without this the
+						// server waits out the boot on a dead relay.
+						slog.Error("Relay client stopped; no further invitations",
+							"error", err)
+						return
 					case inv, ok := <-invs:
 						if !ok {
 							return
@@ -1054,43 +1183,9 @@ func RunClient(ctx context.Context, serverIDStr string, relayURIOverride string,
 		return fmt.Errorf("no connectable relay or TCP addresses found")
 	}
 
-	// Global discovery keeps returning announcements for a while after a server has moved
-	// to another relay, so the newest address is not necessarily the first one. Trying only
-	// relayAddresses[0] means one stale entry fails every attempt. During a LUKS unlock
-	// that is an unbootable machine retrying against a dead relay until the cache expires.
-	var conn net.Conn
-	var lastErr error
-	for _, relayURI := range relayAddresses {
-		u, err := url.Parse(relayURI)
-		if err != nil {
-			lastErr = fmt.Errorf("invalid relay URI %q: %w", relayURI, err)
-			slog.Debug("Skipping unparsable relay URI", "relay", relayURI, "error", err)
-			continue
-		}
-
-		slog.Info("Requesting session invitation from relay", "relay", u.String(), "serverID", serverID.String())
-		invitation, err := client.GetInvitationFromRelay(ctx, u, serverID, []tls.Certificate{cert}, 15*time.Second)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to get invitation from relay %s: %w", u.Host, err)
-			slog.Info("Relay did not offer a session, trying the next address", "relay", u.Host, "error", err)
-			continue
-		}
-
-		slog.Info("Joining relay session")
-		conn, err = client.JoinSession(ctx, invitation)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to join session on relay %s: %w", u.Host, err)
-			slog.Info("Could not join relay session, trying the next address", "relay", u.Host, "error", err)
-			conn = nil
-			continue
-		}
-		break
-	}
-	if conn == nil {
-		if lastErr == nil {
-			lastErr = fmt.Errorf("no relay addresses to try")
-		}
-		return lastErr
+	conn, err := dialFastestRelay(ctx, relayAddresses, serverID, cert)
+	if err != nil {
+		return err
 	}
 	defer conn.Close()
 
