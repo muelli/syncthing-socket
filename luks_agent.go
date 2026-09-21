@@ -511,7 +511,7 @@ func fetchPassphrase(cfg *luksConfig) (string, error) {
 		return "", err
 	}
 
-	args := []string{cfg.Role, "--passphrase", cfg.Seed, "--log-level", "error"}
+	args := []string{cfg.Role, "--seed", cfg.Seed, "--log-level", "error"}
 	switch cfg.Role {
 	case "server":
 		// Announce and wait for the key holder to connect and push the passphrase.

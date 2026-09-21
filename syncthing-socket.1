@@ -27,7 +27,7 @@ Announces the node to the Syncthing discovery network and listens for incoming c
 Looks up the provided Server Device ID and establishes a connection. Can pipe data or interact with multiplexed features like shell or SOCKS5.
 .TP
 .B id
-Prints the local Syncthing Device ID based on a given certificate or passphrase without starting a server or client.
+Prints the local Syncthing Device IDs derived from a given certificate or seed, without starting a server or client.
 .SH SERVER OPTIONS
 .TP
 .BR \-\-cert " \fIPATH\fR"
@@ -36,8 +36,8 @@ Path to a custom TLS certificate (optional).
 .BR \-\-key " \fIPATH\fR"
 Path to a custom TLS key (optional).
 .TP
-.BR \-\-passphrase " \fISTRING\fR"
-Passphrase to deterministically generate the TLS certificate and Device ID on the fly.
+.BR \-\-seed " \fISTRING\fR"
+Seed that both ends derive their transport identity from. The Device ID and the TLS certificate are generated deterministically from it, so two peers given the same seed find and authenticate each other with nothing else configured. It is not a passphrase, and in particular it is not the LUKS passphrase in the disk-unlock use case; \-\-passphrase is a deprecated alias that still works and warns.
 .TP
 .B \-\-socks
 Start a remote SOCKS5 proxy server. The client must also specify \-\-socks to multiplex traffic over the tunnel.
@@ -124,11 +124,11 @@ Pipe a tar archive across the internet securely without port forwarding.
 .RS
 .B Server:
 .br
-tar czf \- ./data | syncthing-socket server \-\-passphrase my-secret
+tar czf \- ./data | syncthing-socket server \-\-seed my-secret
 .br
 .B Client:
 .br
-syncthing-socket client \-\-passphrase my-secret <SERVER-ID> | tar xzf \-
+syncthing-socket client \-\-seed my-secret <SERVER-ID> | tar xzf \-
 .RE
 .PP
 .B 2. Remote Shell
@@ -137,11 +137,11 @@ Start an interactive terminal session on a remote machine.
 .RS
 .B Server:
 .br
-syncthing-socket server \-\-shell \-\-passphrase secret123
+syncthing-socket server \-\-shell \-\-seed secret123
 .br
 .B Client:
 .br
-syncthing-socket client \-\-shell \-\-passphrase secret123 <SERVER-ID>
+syncthing-socket client \-\-shell \-\-seed secret123 <SERVER-ID>
 .RE
 .PP
 .B 3. SOCKS5 Proxy
@@ -202,13 +202,13 @@ Expose a local service behind a NAT to the internet by routing traffic backward 
 .RS
 .B Server (Public VPS):
 .br
-syncthing-socket server \-\-passphrase my-secret \-\-reverse-forward 0.0.0.0:8080
+syncthing-socket server \-\-seed my-secret \-\-reverse-forward 0.0.0.0:8080
 .br
 .I (Or listen on a UNIX socket: \-\-reverse-forward /tmp/remote.sock)
 .br
 .B Client (Local Machine):
 .br
-syncthing-socket client \-\-passphrase my-secret \-\-reverse-forward 127.0.0.1:8000
+syncthing-socket client \-\-seed my-secret \-\-reverse-forward 127.0.0.1:8000
 .br
 .I (Or forward to a UNIX socket: \-\-reverse-forward /var/run/docker.sock)
 .RE
@@ -221,11 +221,11 @@ the client; whatever it prints becomes the LUKS key.
 .RS
 .B Key holder (your laptop), when you want the machine to boot:
 .br
-printf %s 'your\-luks\-passphrase' | syncthing-socket server \-\-passphrase my-secret
+printf %s 'your\-luks\-passphrase' | syncthing-socket server \-\-seed my-secret
 .br
 .B Booting machine (from /lib/cryptsetup/scripts/syncthing-socket-keyscript):
 .br
-syncthing-socket client \-\-passphrase my-secret < /dev/null
+syncthing-socket client \-\-seed my-secret < /dev/null
 .br
 .I The server consumes stdin once and exits after the transfer, so each unlock needs a
 .I fresh invocation. See contrib/initramfs-luks/README.md for the full setup.

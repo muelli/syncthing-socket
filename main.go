@@ -88,7 +88,7 @@ func isTraceEnabled() bool {
 var (
 	serverCert       string
 	serverKey        string
-	serverPassphrase string
+	serverSeed string
 	serverSocks      bool
 	serverShell      bool
 	serverCommand    string
@@ -110,7 +110,7 @@ var (
 
 	clientCert       string
 	clientKey        string
-	clientPassphrase string
+	clientSeed string
 	clientSocks      string
 	clientShell      bool
 	clientReverseForward string
@@ -121,7 +121,7 @@ var (
 	clientLogFormat  string
 	clientTOTP       string
 
-	idPassphrase string
+	idSeed string
 
 	//go:embed assets/logo.png
 	logoPNG []byte
@@ -179,8 +179,8 @@ func Execute() {
 
 			var cert tls.Certificate
 			var err error
-			if serverPassphrase != "" {
-				cert, err = GenerateDeterministicCert(serverPassphrase + CertSuffixServer)
+			if serverSeed != "" {
+				cert, err = GenerateDeterministicCert(serverSeed + CertSuffixServer)
 			} else if serverCert != "" && serverKey != "" {
 				cert, err = loadOrGenerateCert(serverCert, serverKey)
 			} else if serverCert == "" && serverKey == "" {
@@ -250,7 +250,17 @@ func Execute() {
 	}
 	serverCmd.Flags().StringVar(&serverCert, "cert", "", "Path to TLS certificate (optional)")
 	serverCmd.Flags().StringVar(&serverKey, "key", "", "Path to TLS key (optional)")
-	serverCmd.Flags().StringVar(&serverPassphrase, "passphrase", "", "Passphrase to deterministically generate the TLS certificate")
+	// --seed is the name; --passphrase is the old one, kept working for a release.
+	//
+	// It was never a passphrase. It is the seed both ends derive their transport
+	// identities from, and the project calls it a seed everywhere else: p2p_key_seed in
+	// the LUKS2 token, "your-key-seed" in the documentation. The old name was actively
+	// dangerous in the unlock case, where the documented command line reads
+	//   printf %s 'your-luks-passphrase' | syncthing-socket server --passphrase 'your-key-seed'
+	// and the two passphrases are different secrets, one of which unlocks your disk.
+	serverCmd.Flags().StringVar(&serverSeed, "seed", "", "Seed both ends derive their transport identity from")
+	serverCmd.Flags().StringVar(&serverSeed, "passphrase", "", "Deprecated alias for --seed")
+	_ = serverCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 	serverCmd.Flags().BoolVar(&serverSocks, "socks", false, "Start a remote SOCKS5 server handling multiplexed connections")
 	serverCmd.Flags().BoolVar(&serverShell, "shell", false, "Start an interactive PTY shell server")
 	serverCmd.Flags().StringVar(&serverCommand, "command", "", "Command to execute and pipe stdout/stdin for each incoming connection")
@@ -291,13 +301,13 @@ func Execute() {
 			}
 
 			var targetStr string
-			if clientPassphrase != "" {
+			if clientSeed != "" {
 				if len(args) > 0 {
 					targetStr = args[0]
 				}
 			} else {
 				if len(args) < 1 {
-					fmt.Fprintln(os.Stderr, "Error: client mode requires target server Device ID unless --passphrase is used")
+					fmt.Fprintln(os.Stderr, "Error: client mode requires target server Device ID unless --seed is used")
 					cmd.Usage()
 					os.Exit(1)
 				}
@@ -318,8 +328,8 @@ func Execute() {
 				relayURI = clientRelay
 			}
 
-			if clientPassphrase != "" {
-				serverCertStruct, _ := GenerateDeterministicCert(clientPassphrase + CertSuffixServer)
+			if clientSeed != "" {
+				serverCertStruct, _ := GenerateDeterministicCert(clientSeed + CertSuffixServer)
 				derivedID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0]).String()
 				if serverID == "" {
 					serverID = derivedID
@@ -335,8 +345,8 @@ func Execute() {
 
 			var cert tls.Certificate
 			var err error
-			if clientPassphrase != "" {
-				cert, err = GenerateDeterministicCert(clientPassphrase + CertSuffixClient)
+			if clientSeed != "" {
+				cert, err = GenerateDeterministicCert(clientSeed + CertSuffixClient)
 			} else if clientCert != "" && clientKey != "" {
 				cert, err = loadOrGenerateCert(clientCert, clientKey)
 			} else if clientCert == "" && clientKey == "" {
@@ -361,7 +371,9 @@ func Execute() {
 	}
 	clientCmd.Flags().StringVar(&clientCert, "cert", "", "Path to TLS certificate (optional)")
 	clientCmd.Flags().StringVar(&clientKey, "key", "", "Path to TLS key (optional)")
-	clientCmd.Flags().StringVar(&clientPassphrase, "passphrase", "", "Passphrase to deterministically generate the TLS certificate")
+	clientCmd.Flags().StringVar(&clientSeed, "seed", "", "Seed both ends derive their transport identity from")
+	clientCmd.Flags().StringVar(&clientSeed, "passphrase", "", "Deprecated alias for --seed")
+	_ = clientCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 	clientCmd.Flags().StringVar(&clientSocks, "socks", "", "Start a local SOCKS5 proxy on this address (e.g. 127.0.0.1:1080)")
 	clientCmd.Flags().BoolVar(&clientShell, "shell", false, "Start an interactive PTY shell client")
 	clientCmd.Flags().StringVar(&clientReverseForward, "reverse-forward", "", "Accept reverse-forwarded connections from the server and dial this target (e.g. 127.0.0.1:80)")
@@ -376,19 +388,19 @@ func Execute() {
 		Use:   "id",
 		Short: "Compute Device IDs from a passphrase",
 		Run: func(cmd *cobra.Command, args []string) {
-			if idPassphrase == "" {
-				fmt.Fprintln(os.Stderr, "Error: --passphrase is required")
+			if idSeed == "" {
+				fmt.Fprintln(os.Stderr, "Error: --seed is required")
 				os.Exit(1)
 			}
 			
-			serverCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixServer)
+			serverCertStruct, err := GenerateDeterministicCert(idSeed + CertSuffixServer)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error generating server cert:", err)
 				os.Exit(1)
 			}
 			serverID := syncthingprotocol.NewDeviceID(serverCertStruct.Certificate[0])
 			
-			clientCertStruct, err := GenerateDeterministicCert(idPassphrase + CertSuffixClient)
+			clientCertStruct, err := GenerateDeterministicCert(idSeed + CertSuffixClient)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error generating client cert:", err)
 				os.Exit(1)
@@ -399,7 +411,9 @@ func Execute() {
 			fmt.Printf("Client ID: %s\n", clientID.String())
 		},
 	}
-	idCmd.Flags().StringVar(&idPassphrase, "passphrase", "", "Passphrase to compute the Syncthing ID for")
+	idCmd.Flags().StringVar(&idSeed, "seed", "", "Seed to compute the Syncthing Device IDs for")
+	idCmd.Flags().StringVar(&idSeed, "passphrase", "", "Deprecated alias for --seed")
+	_ = idCmd.Flags().MarkDeprecated("passphrase", "use --seed instead; it was never a passphrase")
 
 	installServiceCmd := &cobra.Command{
 		Use:   "install-service",
@@ -1097,6 +1111,7 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 }
 
 func RunClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string, totpPasscode string) error {
+
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {
 		return fmt.Errorf("invalid server Device ID: %w", err)

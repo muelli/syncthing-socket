@@ -8,7 +8,7 @@ import (
 
 // TestSeedSuffixesProduceDistinctIdentities pins down the derivation the whole pairing
 // scheme rests on: the two ends of a connection must derive *different* certificates from
-// the same seed, and those must be exactly what `syncthing-socket id --passphrase` prints.
+// the same seed, and those must be exactly what `syncthing-socket id --seed` prints.
 //
 // The gomobile bridge got this wrong by omitting the suffix entirely, which produced a
 // third identity matching neither end; a silent, connection-refusing failure rather than

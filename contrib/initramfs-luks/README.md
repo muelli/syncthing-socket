@@ -118,7 +118,7 @@ lease and writes the file itself. It says so on the console when it does.
 Pick a seed and see what identities it produces:
 
 ```bash
-syncthing-socket id --passphrase "your-key-seed"
+syncthing-socket id --seed "your-key-seed"
 ```
 
 ### Recommended: asymmetric identities
@@ -128,7 +128,7 @@ Give the booting machine its own seed, and pin the key holder by its Device ID:
 
 ```bash
 # On the key holder, once. Its Device ID is public information.
-syncthing-socket id --passphrase "$KEYHOLDER_SEED"     # -> Server ID
+syncthing-socket id --seed "$KEYHOLDER_SEED"     # -> Server ID
 
 # On the booting machine, store the config in the LUKS2 header:
 sudo syncthing-luks-bind /dev/nvme0n1p3 "$BOOT_SEED" "$KEYHOLDER_SERVER_ID"
@@ -138,12 +138,18 @@ Then the key holder answers only that machine:
 
 ```bash
 printf %s 'your-luks-passphrase' | syncthing-socket server \
-    --passphrase "$KEYHOLDER_SEED" \
-    --authorized-clients "$BOOT_CLIENT_ID"      # id --passphrase "$BOOT_SEED" -> Client ID
+    --seed "$KEYHOLDER_SEED" \
+    --authorized-clients "$BOOT_CLIENT_ID"      # id --seed "$BOOT_SEED" -> Client ID
 ```
 
 Now the initramfs contains only the booting machine's *own* identity plus a public Device
 ID. Someone who reads it cannot impersonate your key holder.
+
+> **Two different secrets.** The LUKS passphrase is what unlocks the disk, and it travels
+> on stdin. The seed is what the two ends derive their Syncthing identities from, and it
+> goes to `--seed`. They are unrelated, and only one of them unlocks anything. The seed
+> used to be spelled `--passphrase`, which put both words on one command line meaning
+> different things; that spelling still works and warns.
 
 ### Simpler: one shared seed
 
@@ -152,7 +158,7 @@ Both ends derive everything from the same seed. The booting machine uses
 
 ```bash
 sudo syncthing-luks-bind /dev/nvme0n1p3 "your-key-seed"
-printf %s 'your-luks-passphrase' | syncthing-socket server --passphrase "your-key-seed"
+printf %s 'your-luks-passphrase' | syncthing-socket server --seed "your-key-seed"
 ```
 
 Convenient, but anyone who reads your initramfs learns the seed and can derive **both**
@@ -228,7 +234,7 @@ running:
 
 ```bash
 read -rsp 'LUKS passphrase: ' PASS
-printf %s "$PASS" | syncthing-socket server --passphrase "$KEYHOLDER_SEED"
+printf %s "$PASS" | syncthing-socket server --seed "$KEYHOLDER_SEED"
 ```
 
 With `UNLOCK_ROLE=server` the machine waits instead, and you push the passphrase whenever
@@ -236,7 +242,7 @@ you like (this is what the Android app does):
 
 ```bash
 read -rsp 'LUKS passphrase: ' PASS
-printf %s "$PASS" | syncthing-socket client --passphrase "$SEED" "$MACHINE_DEVICE_ID"
+printf %s "$PASS" | syncthing-socket client --seed "$SEED" "$MACHINE_DEVICE_ID"
 ```
 
 The server consumes its stdin **once** and exits after the transfer, so each unlock needs a
@@ -406,7 +412,7 @@ The machine keeps retrying, so you can take your time. In order of likelihood:
   unlock; see *Gotchas* about the initramfs getting a different lease from the booted
   system.
 - **Wrong pairing.** Confirm the phone's Device ID matches what the header authorises:
-  `syncthing-socket id --passphrase "<seed>"` prints the Client ID, which must equal
+  `syncthing-socket id --seed "<seed>"` prints the Client ID, which must equal
   `key_bearing_device_id` in the token.
 
 You always have the fallbacks below: the console prompt and `cryptroot-unlock` both keep

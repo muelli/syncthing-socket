@@ -28,12 +28,12 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$MODE" = relay ]; then
-	VM_CLIENT_ID=$("$BINARY" id --passphrase "$SEED" | awk '/^Client ID:/{print $3}')
+	VM_CLIENT_ID=$("$BINARY" id --seed "$SEED" | awk '/^Client ID:/{print $3}')
 	cat > "$OUTDIR/keyholder.sh" <<EOF
 #!/bin/bash
 # keyholder-$OUTDIR
 while true; do
-  printf %s '$VM_PASSPHRASE' | $BINARY server --passphrase '$SEED' \\
+  printf %s '$VM_PASSPHRASE' | $BINARY server --seed '$SEED' \\
     --authorized-clients '$VM_CLIENT_ID' --announce-interval 60s --log-level info
   echo "--- key holder served or exited, restarting \$(date -Is)"
   sleep 2

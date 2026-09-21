@@ -135,7 +135,7 @@ if ! printf %s "$PASSPHRASE" | cryptsetup open --test-passphrase --key-file=- "$
 fi
 echo "Passphrase verified against $DEVICE."
 
-IDS=$(syncthing-socket id --passphrase "$UNLOCK_SEED")
+IDS=$(syncthing-socket id --seed "$UNLOCK_SEED")
 MACHINE_DEVICE_ID=$(echo "$IDS" | awk '/^Server ID:/ {print $3}')
 PHONE_DEVICE_ID=$(echo "$IDS" | awk '/^Client ID:/ {print $3}')
 if [ -z "$MACHINE_DEVICE_ID" ] || [ -z "$PHONE_DEVICE_ID" ]; then

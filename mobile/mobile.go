@@ -33,7 +33,7 @@ func UnlockLUKS(passphrase, p2pKeySeed, serverDeviceID string) error {
 
 	// The suffix is not optional. Both ends derive their identity from the same seed and
 	// must land on *different* certificates; without it this side's Device ID matches
-	// neither the Server ID nor the Client ID that `syncthing-socket id --passphrase`
+	// neither the Server ID nor the Client ID that `syncthing-socket id --seed`
 	// prints, so the peer rejects it. We connect, so we are the client.
 	cert, err := socket.GenerateDeterministicCert(p2pKeySeed + socket.CertSuffixClient)
 	if err != nil {
