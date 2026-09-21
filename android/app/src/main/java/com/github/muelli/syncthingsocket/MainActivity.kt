@@ -114,6 +114,9 @@ private sealed class UnlockUi {
 internal fun pairedDeviceId(context: Context): String? =
     CredentialStore(context).publicDeviceId()
 
+/** The pairing-code format this build reads and writes; see the LUKS2 token's version. */
+private const val PAIRING_FORMAT_VERSION = 1
+
 private data class Pairing(val passphrase: String, val seed: String, val deviceId: String)
 
 /**
@@ -594,18 +597,25 @@ class MainActivity : FragmentActivity() {
 
 private fun parsePairing(payload: String): Pairing? = runCatching {
     val json = JSONObject(payload)
+    // The keys match the LUKS2 header's where they mean the same thing. Version is
+    // checked so a code from a different binding scheme is refused rather than half
+    // understood.
+    require(json.optInt("version") == PAIRING_FORMAT_VERSION) {
+        "pairing code version ${json.optInt("version")}, expected $PAIRING_FORMAT_VERSION"
+    }
     Pairing(
         passphrase = json.getString("passphrase"),
-        seed = json.getString("phone_seed"),
-        deviceId = json.getString("laptop_device_id")
+        seed = json.getString("p2p_key_seed"),
+        deviceId = json.getString("machine_device_id")
     )
 }.getOrNull()
 
 /** The inverse of parsePairing, so a phone can hand its pairing to the next one. */
 private fun pairingJson(p: Pairing): String = JSONObject()
+    .put("version", PAIRING_FORMAT_VERSION)
     .put("passphrase", p.passphrase)
-    .put("phone_seed", p.seed)
-    .put("laptop_device_id", p.deviceId)
+    .put("p2p_key_seed", p.seed)
+    .put("machine_device_id", p.deviceId)
     .toString()
 
 /**
@@ -1229,7 +1239,7 @@ private fun QRScannerScreen(onQRCodeScanned: (String) -> Unit, onCancel: () -> U
 
                         try {
                             val result = reader.decode(binaryBitmap)
-                            if (result.text.contains("laptop_device_id")) {
+                            if (result.text.contains("machine_device_id")) {
                                 onQRCodeScanned(result.text)
                             }
                         } catch (e: Exception) {

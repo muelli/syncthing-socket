@@ -88,6 +88,14 @@ if [ "$REPRINT" = yes ]; then
         echo "Run syncthing-luks-setup $DEVICE without --reprint instead." >&2
         exit 1
     fi
+    version=$(printf '%s' "$TOKEN" | tr -d '\n' |
+        sed -n 's/.*"version"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')
+    if [ "$version" != "1" ]; then
+        echo "Error: the syncthing-socket token on $DEVICE is version ${version:-unversioned}," >&2
+        echo "and this tool writes and reads version 1. Re-run without --reprint to" >&2
+        echo "replace it, which mints a fresh seed and needs a re-bind." >&2
+        exit 1
+    fi
     UNLOCK_SEED=$(json_field "$TOKEN" p2p_key_seed)
     if [ -z "$UNLOCK_SEED" ]; then
         echo "Error: the syncthing-socket token on $DEVICE has no p2p_key_seed." >&2
@@ -143,14 +151,16 @@ json_escape() {
     printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-# The JSON keys are what the Android app parses. "phone_seed" is the seed the phone derives
-# its client identity from, and "laptop_device_id" is the Device ID it connects to, i.e.
-# this machine's Server ID.
+# The JSON keys are what the Android app parses, and they deliberately match the names in
+# the LUKS2 header where they mean the same thing. "p2p_key_seed" is that same seed, so it
+# is called that in both places rather than being renamed in transit. "machine_device_id"
+# is this machine's Server ID, the one the phone connects to; it used to be called
+# "laptop_device_id", which was wrong about the usual case, an unattended server.
 TMPJSON=$(mktemp)
 trap 'rm -f "$TMPJSON"' EXIT
 chmod 600 "$TMPJSON"
 cat > "$TMPJSON" <<EOF
-{"passphrase":"$(json_escape "$PASSPHRASE")","phone_seed":"$UNLOCK_SEED","laptop_device_id":"$MACHINE_DEVICE_ID"}
+{"version":1,"passphrase":"$(json_escape "$PASSPHRASE")","p2p_key_seed":"$UNLOCK_SEED","machine_device_id":"$MACHINE_DEVICE_ID"}
 EOF
 
 echo ""

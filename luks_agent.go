@@ -140,12 +140,24 @@ type luksConfig struct {
 // luksToken is the shape syncthing-luks-bind writes into the header.
 type luksToken struct {
 	Type               string `json:"type"`
+	Version            int    `json:"version"`
 	Seed               string `json:"p2p_key_seed"`
 	KeyBearingDeviceID string `json:"key_bearing_device_id"`
 	Role               string `json:"unlock_role"`
 }
 
 const luksTokenType = "syncthing-socket"
+
+// luksTokenVersion is the binding format this build understands.
+//
+// The version exists because the type name alone does not say what the rest of the object
+// means. This scheme stores a seed and sends the passphrase over the wire; a blinded
+// key-agreement scheme would store an ephemeral public point and no passphrase at all, and
+// the synctang project is building exactly that against this package. Two schemes under
+// one type name, told apart only by which fields happen to be present, is how a reader
+// ends up confidently misparsing the other one's token. Refusing an unknown version says
+// so instead.
+const luksTokenVersion = 1
 
 // parseLUKSToken pulls our configuration out of one `cryptsetup token export` document,
 // returning nil for a token belonging to somebody else (Clevis, systemd-tpm2).
@@ -156,6 +168,16 @@ func parseLUKSToken(raw []byte) (*luksConfig, error) {
 	}
 	if tok.Type != luksTokenType {
 		return nil, nil
+	}
+	if tok.Version != luksTokenVersion {
+		if tok.Version == 0 {
+			return nil, fmt.Errorf(
+				"this %s token predates the versioned format; re-run syncthing-luks-bind",
+				luksTokenType)
+		}
+		return nil, fmt.Errorf(
+			"this %s token is version %d and this build understands version %d",
+			luksTokenType, tok.Version, luksTokenVersion)
 	}
 	if tok.Seed == "" {
 		return nil, fmt.Errorf("the %s token carries no p2p_key_seed", luksTokenType)

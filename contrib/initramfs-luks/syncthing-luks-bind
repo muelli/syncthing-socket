@@ -70,7 +70,7 @@ while [ "$token_id" -lt 32 ]; do
 done
 
 cat > "$TMPJSON" <<JSON
-{"type":"syncthing-socket","keyslots":["0"],"p2p_key_seed":"$P2P_KEY_SEED","key_bearing_device_id":"$KEY_BEARING_DEVICE_ID","unlock_role":"$UNLOCK_ROLE"}
+{"type":"syncthing-socket","keyslots":[],"version":1,"p2p_key_seed":"$P2P_KEY_SEED","key_bearing_device_id":"$KEY_BEARING_DEVICE_ID","unlock_role":"$UNLOCK_ROLE"}
 JSON
 
 echo "Injecting syncthing-socket metadata into $DEVICE..."

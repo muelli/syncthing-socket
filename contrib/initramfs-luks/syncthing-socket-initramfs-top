@@ -72,6 +72,17 @@ read_config() {
 		token_json=$(cryptsetup token export --token-id "$token_id" "$1" 2>/dev/null)
 		case "$token_json" in
 		*'"type"'*'"syncthing-socket"'*)
+			# Refuse a token written by a different binding scheme rather than
+			# reading whichever fields happen to look familiar.
+			version=$(printf %s "$token_json" |
+				sed -n 's/.*"version"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')
+			if [ "$version" != "1" ]; then
+				echo "syncthing-socket: the token on $1 is version ${version:-unversioned}," \
+					"and this build understands version 1. Re-run syncthing-luks-bind." \
+					> /dev/console
+				token_id=$((token_id + 1))
+				continue
+			fi
 			P2P_KEY_SEED=$(printf %s "$token_json" |
 				sed -n 's/.*"p2p_key_seed"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 			KEY_BEARING_DEVICE_ID=$(printf %s "$token_json" |

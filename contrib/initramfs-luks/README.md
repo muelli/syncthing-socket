@@ -166,6 +166,20 @@ identities.
 sudo cryptsetup token export --token-id 0 /dev/nvme0n1p3
 ```
 
+```json
+{"type":"syncthing-socket","keyslots":[],"version":1,
+ "p2p_key_seed":"...","key_bearing_device_id":"...","unlock_role":"server"}
+```
+
+`version` is checked on every read. The type name alone does not say what the rest of the
+object means: this scheme stores a seed and sends the passphrase over the wire, while a
+blinded key-agreement scheme would store an ephemeral public point and no passphrase at
+all. A token from a scheme this build does not know is refused by name rather than read
+for whichever fields happen to look familiar.
+
+`keyslots` is empty, which in LUKS2 means the token is not tied to one keyslot. It used to
+say `["0"]`, which was only true if your passphrase happened to live in the first slot.
+
 If you would rather not touch the header, put the same values in
 `/etc/syncthing-socket/luks.conf` instead. The hook copies it into the initramfs, and it
 takes precedence over the token:

@@ -87,7 +87,7 @@ func TestOnlyCryptsetupRequestsAreAnswered(t *testing.T) {
 }
 
 func TestParseLUKSToken(t *testing.T) {
-	ours := []byte(`{"type":"syncthing-socket","keyslots":["0"],` +
+	ours := []byte(`{"type":"syncthing-socket","keyslots":[],"version":1,` +
 		`"p2p_key_seed":"c2VlZA==","key_bearing_device_id":"AAAA-BBBB","unlock_role":"server"}`)
 	cfg, err := parseLUKSToken(ours)
 	if err != nil {
@@ -115,8 +115,8 @@ func TestParseLUKSTokenIgnoresOtherTypes(t *testing.T) {
 
 func TestParseLUKSTokenRejectsUnusable(t *testing.T) {
 	for name, raw := range map[string]string{
-		"no seed":  `{"type":"syncthing-socket","key_bearing_device_id":"X"}`,
-		"bad role": `{"type":"syncthing-socket","p2p_key_seed":"s","unlock_role":"sideways"}`,
+		"no seed":  `{"type":"syncthing-socket","version":1,"key_bearing_device_id":"X"}`,
+		"bad role": `{"type":"syncthing-socket","version":1,"p2p_key_seed":"s","unlock_role":"sideways"}`,
 		"garbage":  `{"type":`,
 	} {
 		if _, err := parseLUKSToken([]byte(raw)); err == nil {
@@ -127,7 +127,7 @@ func TestParseLUKSTokenRejectsUnusable(t *testing.T) {
 
 // The role defaults to client, matching syncthing-luks-bind's own default.
 func TestParseLUKSTokenDefaultsToClient(t *testing.T) {
-	cfg, err := parseLUKSToken([]byte(`{"type":"syncthing-socket","p2p_key_seed":"s"}`))
+	cfg, err := parseLUKSToken([]byte(`{"type":"syncthing-socket","version":1,"p2p_key_seed":"s"}`))
 	if err != nil {
 		t.Fatalf("parseLUKSToken: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestFindLUKSConfigScansDevices(t *testing.T) {
 		},
 		tokens: map[string]string{
 			"/dev/vdb:0": `{"type":"clevis","keyslots":["1"]}`,
-			"/dev/vdb:2": `{"type":"syncthing-socket","p2p_key_seed":"c2VlZA==",` +
+			"/dev/vdb:2": `{"type":"syncthing-socket","version":1,"p2p_key_seed":"c2VlZA==",` +
 				`"key_bearing_device_id":"AAAA-BBBB","unlock_role":"server"}`,
 		},
 	}
@@ -368,5 +368,37 @@ func TestGlobAll(t *testing.T) {
 	// which would then be opened as a literal filename.
 	if got := globAll("/nonexistent-dir-for-tests/*.conf"); len(got) != 0 {
 		t.Errorf("an unmatched pattern gave %v, want nothing", got)
+	}
+}
+
+// The version is the whole point of having one: a token written by a different binding
+// scheme under the same type name must be refused, not read for whichever fields happen to
+// look familiar. The synctang project is building such a scheme against this package.
+func TestParseLUKSTokenRejectsOtherVersions(t *testing.T) {
+	for name, raw := range map[string]string{
+		"from the future": `{"type":"syncthing-socket","version":2,"p2p_key_seed":"s"}`,
+		"unversioned":     `{"type":"syncthing-socket","p2p_key_seed":"s"}`,
+	} {
+		_, err := parseLUKSToken([]byte(raw))
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+			continue
+		}
+		// The message has to be actionable from a boot console.
+		if !strings.Contains(err.Error(), "version") {
+			t.Errorf("%s: error does not mention the version: %v", name, err)
+		}
+	}
+}
+
+// An unversioned token says what to do about it, because the only way to see this message
+// is on the console of a machine that will not boot.
+func TestUnversionedTokenSaysHowToFixIt(t *testing.T) {
+	_, err := parseLUKSToken([]byte(`{"type":"syncthing-socket","p2p_key_seed":"s"}`))
+	if err == nil {
+		t.Fatal("an unversioned token was accepted")
+	}
+	if !strings.Contains(err.Error(), "syncthing-luks-bind") {
+		t.Errorf("error does not name the command that fixes it: %v", err)
 	}
 }
