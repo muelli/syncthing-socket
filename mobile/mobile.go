@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"syncthing-socket"
+	"github.com/muelli/syncthing-socket"
 )
 
 // UnlockLUKS connects to the target server and transmits the passphrase.

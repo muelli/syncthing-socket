@@ -1,4 +1,4 @@
-module syncthing-socket
+module github.com/muelli/syncthing-socket
 
 go 1.25.0
 

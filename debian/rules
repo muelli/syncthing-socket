@@ -19,7 +19,7 @@ GOARCH_BUILD = $(GOARCH_$(DEB_BUILD_ARCH))
 
 # -s -w strips the symbol table and DWARF at link time. Doing it here rather than with
 # dh_strip means no cross binutils is needed to build for another architecture.
-LDFLAGS = -s -w -X syncthing-socket.Version=$(VERSION)
+LDFLAGS = -s -w -X github.com/muelli/syncthing-socket.Version=$(VERSION)
 
 %:
 	dh $@

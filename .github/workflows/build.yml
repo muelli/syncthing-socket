@@ -70,7 +70,7 @@ jobs:
         run: |
           mkdir -p dist
           VERSION=$(sh scripts/version.sh)
-          LDFLAGS="-s -w -X syncthing-socket.Version=$VERSION"
+          LDFLAGS="-s -w -X github.com/muelli/syncthing-socket.Version=$VERSION"
           export CGO_ENABLED=0
           
           GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-linux-amd64 ./cmd/syncthing-socket
@@ -78,6 +78,17 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-amd64 ./cmd/syncthing-socket
           GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-darwin-arm64 ./cmd/syncthing-socket
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/syncthing-socket-windows-amd64.exe ./cmd/syncthing-socket
+
+          # The -X path is the package path, so a module rename silently stops stamping
+          # and every release reports "dev". That has happened here once already, when
+          # the path said "main". Catch it while the binary is still in dist.
+          STAMPED=$(./dist/syncthing-socket-linux-amd64 --version | awk '{print $NF}')
+          if [ "$STAMPED" != "$VERSION" ]; then
+            echo "Version stamping is broken: the binary reports '$STAMPED', expected '$VERSION'." >&2
+            echo "The -X flag names a package path; check it still matches the module." >&2
+            exit 1
+          fi
+          echo "Version stamped correctly: $STAMPED"
 
           echo "$VERSION" > VERSION
           tar --exclude='./dist' --exclude='./.git' --exclude='./local' --exclude='./test-*' --exclude='./.venv' --exclude='./.agents' -czf dist/syncthing-socket-source-$VERSION.tar.gz .

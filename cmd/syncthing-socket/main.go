@@ -1,7 +1,7 @@
 package main
 
 import (
-	"syncthing-socket"
+	"github.com/muelli/syncthing-socket"
 )
 
 func main() {

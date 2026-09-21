@@ -9,7 +9,7 @@ DESTDIR := ""
 
 # Build the project. The root package is the `socket` library; the binary is in ./cmd.
 build:
-    {{GO}} build -ldflags "-X syncthing-socket.Version={{VERSION}}" -o syncthing-socket ./cmd/syncthing-socket
+    {{GO}} build -ldflags "-X github.com/muelli/syncthing-socket.Version={{VERSION}}" -o syncthing-socket ./cmd/syncthing-socket
 
 # Install the binary, man page, completions, and systemd service
 install: build
