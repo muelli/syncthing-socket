@@ -392,7 +392,13 @@ func Execute() {
 	clientCmd.Flags().BoolVar(&clientTryDirect, "direct", true, "Try direct TCP connections before falling back to relay")
 	clientCmd.Flags().StringVar(&clientLogLevel, "log-level", "info", "Log level (trace, debug, info, warn, error)")
 	clientCmd.Flags().StringVar(&clientLogFormat, "log-format", "auto", "Log format (auto, text, json, journald)")
-	clientCmd.Flags().StringVar(&clientTOTP, "totp", "", "6-digit TOTP passcode")
+	// --totp-passcode, because --totp already means something else one command over:
+	// on the server it is a boolean switch that turns the requirement on, here it
+	// carried the six digits. One name for a switch and a value is a coin flip for
+	// whoever is reading a command line. The old spelling still works and warns.
+	clientCmd.Flags().StringVar(&clientTOTP, "totp-passcode", "", "6-digit TOTP passcode")
+	clientCmd.Flags().StringVar(&clientTOTP, "totp", "", "Deprecated alias for --totp-passcode")
+	_ = clientCmd.Flags().MarkDeprecated("totp", "use --totp-passcode instead; --totp is a switch on the server")
 
 	var idCmd = &cobra.Command{
 		Use:   "id",
