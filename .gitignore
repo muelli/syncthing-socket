@@ -9,7 +9,10 @@ key.pem
 local/
 
 # Test binaries
-test-*
+# Anchored to the repository root: these are the e2e suite's build artefacts
+# (test-server, test-auth-binary and friends). Unanchored, this also swallowed
+# contrib/test-vm/ and anything else named test-* anywhere in the tree.
+/test-*
 /dist/
 .venv/
 
