@@ -166,6 +166,11 @@ if [ -f /etc/initramfs-tools/initramfs.conf ]; then
   grep -q '^IP=dhcp' /etc/initramfs-tools/initramfs.conf || echo 'IP=dhcp' >> /etc/initramfs-tools/initramfs.conf
 fi
 
+# openssh-server's postinst does not generate host keys in a chroot, and Ubuntu has no
+# ssh-keygen.service to do it at first boot, so without this sshd fails to start on every
+# boot and the forwarded ssh port goes nowhere.
+ssh-keygen -A
+
 systemctl enable ssh
 systemctl enable serial-getty@ttyS0.service
 echo "root:$VM_PASSPHRASE" | chpasswd
