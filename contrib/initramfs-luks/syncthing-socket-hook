@@ -15,8 +15,21 @@ esac
 
 # Packaged installs land in /usr/bin, manual ones usually in /usr/local/bin. Override with
 # SYNCTHING_SOCKET_BIN if yours is somewhere else.
+# The same search the dracut module does, in the same order. Trying PATH first covers an
+# unusual prefix, and the explicit list covers the case PATH cannot: an initramfs is
+# normally rebuilt from a maintainer script or a kernel hook, and those run with a PATH
+# that excludes /usr/local/bin.
+#
+# /usr/sbin is in the list because it is where an install that wants to be findable from a
+# maintainer script puts the binary. It was missing here while the dracut module had it,
+# so the same binary in the same place worked on one initramfs generator and was skipped
+# by the other.
 if [ -z "${SYNCTHING_SOCKET_BIN:-}" ]; then
-	for candidate in /usr/local/bin/syncthing-socket /usr/bin/syncthing-socket; do
+	SYNCTHING_SOCKET_BIN=$(command -v syncthing-socket 2> /dev/null || true)
+fi
+if [ -z "${SYNCTHING_SOCKET_BIN:-}" ]; then
+	for candidate in /usr/local/sbin/syncthing-socket /usr/local/bin/syncthing-socket \
+		/usr/sbin/syncthing-socket /usr/bin/syncthing-socket; do
 		if [ -x "$candidate" ]; then
 			SYNCTHING_SOCKET_BIN="$candidate"
 			break
@@ -25,8 +38,12 @@ if [ -z "${SYNCTHING_SOCKET_BIN:-}" ]; then
 fi
 
 if [ -z "${SYNCTHING_SOCKET_BIN:-}" ] || [ ! -x "$SYNCTHING_SOCKET_BIN" ]; then
-	echo "W: syncthing-socket: binary not found in /usr/local/bin or /usr/bin, skipping." >&2
-	echo "W: syncthing-socket: remote LUKS unlock will NOT be available." >&2
+	# Loud, because the consequence is silent: the local-top script is installed
+	# separately and still runs, finds no binary, and exits 0. The machine then sits at
+	# its passphrase prompt at the next boot with nothing saying why.
+	echo "W: syncthing-socket: no binary found on PATH, /usr/local/sbin, /usr/local/bin," >&2
+	echo "W: syncthing-socket: /usr/sbin or /usr/bin. Set SYNCTHING_SOCKET_BIN to point at it." >&2
+	echo "W: syncthing-socket: remote LUKS unlock will NOT be available from this initramfs." >&2
 	exit 0
 fi
 
