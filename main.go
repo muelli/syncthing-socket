@@ -402,7 +402,7 @@ func Execute() {
 
 	var idCmd = &cobra.Command{
 		Use:   "id",
-		Short: "Compute Device IDs from a passphrase",
+		Short: "Compute the Device IDs a seed derives",
 		Run: func(cmd *cobra.Command, args []string) {
 			if idSeed == "" {
 				fmt.Fprintln(os.Stderr, "Error: --seed is required")
@@ -423,8 +423,24 @@ func Execute() {
 			}
 			clientID := syncthingprotocol.NewDeviceID(clientCertStruct.Certificate[0])
 			
+			// Say which role each identity belongs to, not just its name.
+			//
+			// A seed derives two Device IDs and the names alone do not say which end
+			// uses which, so configuring an unlock meant deriving the mapping from
+			// first principles every time: the end that waits is the Server, the end
+			// that dials is the Client, and the token's key_bearing_device_id is
+			// always the other end's. Printing it removes the step where that is got
+			// backwards, which fails at the next boot as a wrong-peer error.
 			fmt.Printf("Server ID: %s\n", serverID.String())
 			fmt.Printf("Client ID: %s\n", clientID.String())
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "The Server ID belongs to whichever end waits to be connected to,")
+			fmt.Fprintln(os.Stderr, "and the Client ID to whichever end dials out. For a LUKS unlock:")
+			fmt.Fprintln(os.Stderr, "  unlock_role=server  the machine waits, so it is the Server ID,")
+			fmt.Fprintln(os.Stderr, "                      and key_bearing_device_id is the Client ID.")
+			fmt.Fprintln(os.Stderr, "  unlock_role=client  the machine dials out, so it is the Client ID,")
+			fmt.Fprintln(os.Stderr, "                      and key_bearing_device_id is the Server ID.")
+			fmt.Fprintln(os.Stderr, "The key holder is the other end in both cases; the machine only ever receives.")
 		},
 	}
 	idCmd.Flags().StringVar(&idSeed, "seed", "", "Seed to compute the Syncthing Device IDs for")
