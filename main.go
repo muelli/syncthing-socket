@@ -363,7 +363,17 @@ func Execute() {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			if err := RunClient(ctx, serverID, relayURI, cert, clientDiscovery, clientTryDirect, clientSocks, clientShell, clientReverseForward, clientTOTP); err != nil {
+			if err := RunClient(ctx, ClientOptions{
+				ServerID:        serverID,
+				Cert:            cert,
+				RelayURI:        relayURI,
+				DiscoveryServer: clientDiscovery,
+				TryDirect:       clientTryDirect,
+				Socks:           clientSocks,
+				Shell:           clientShell,
+				ReverseForward:  clientReverseForward,
+				TOTPPasscode:    clientTOTP,
+			}); err != nil {
 				slog.Error("Client error", "error", err)
 				os.Exit(1)
 			}
@@ -1110,7 +1120,46 @@ func handleServerConn(conn net.Conn, cert tls.Certificate, isRelay bool, isSocks
 	}
 }
 
-func RunClient(ctx context.Context, serverIDStr string, relayURIOverride string, cert tls.Certificate, discoveryServer string, tryDirect bool, localSocks string, isShell bool, reverseForward string, totpPasscode string) error {
+// ClientOptions is everything RunClient needs.
+//
+// A struct rather than a parameter list. The list had grown to nine values after the
+// context, five of them strings and three of those routinely empty, so the call site read
+// `RunClient(ctx, id, "", cert, url, true, "", false, "", "")` and a transposition between
+// two adjacent strings would compile and quietly do the wrong thing. Named fields also
+// make a later addition additive instead of shifting everything after it.
+type ClientOptions struct {
+	// ServerID is the peer's Syncthing Device ID, optionally with an @relay suffix.
+	ServerID string
+	// Cert is this end's identity, usually derived from the shared seed.
+	Cert tls.Certificate
+	// RelayURI overrides discovery with a specific relay. Empty means resolve via
+	// discovery, which is the normal case.
+	RelayURI string
+	// DiscoveryServer is the lookup endpoint. Empty yields a relative URL and fails
+	// every lookup, so pass DefaultDiscoveryURL unless you mean something else.
+	DiscoveryServer string
+	// TryDirect attempts an ICE/WebRTC upgrade to a direct connection.
+	TryDirect bool
+	// Socks, if set, serves a local SOCKS5 proxy over the tunnel instead of piping.
+	Socks string
+	// Shell requests an interactive PTY instead of piping.
+	Shell bool
+	// ReverseForward forwards incoming reverse-tunnel traffic to this address.
+	ReverseForward string
+	// TOTPPasscode answers a server that requires RFC 6238 authentication.
+	TOTPPasscode string
+}
+
+func RunClient(ctx context.Context, opts ClientOptions) error {
+	serverIDStr := opts.ServerID
+	relayURIOverride := opts.RelayURI
+	cert := opts.Cert
+	discoveryServer := opts.DiscoveryServer
+	tryDirect := opts.TryDirect
+	localSocks := opts.Socks
+	isShell := opts.Shell
+	reverseForward := opts.ReverseForward
+	totpPasscode := opts.TOTPPasscode
 
 	serverID, err := syncthingprotocol.DeviceIDFromString(serverIDStr)
 	if err != nil {

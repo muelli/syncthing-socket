@@ -43,7 +43,13 @@ func UnlockLUKS(passphrase, p2pKeySeed, serverDeviceID string) error {
 	// We run the client directly (in raw pipe mode, not as a shell/socks).
 	// An empty discovery server yields a relative URL and fails every lookup, so pass the
 	// same default the CLI uses. relayURIOverride stays empty: resolve via discovery.
-	err = socket.RunClient(context.Background(), serverDeviceID, "", cert, socket.DefaultDiscoveryURL, true, "", false, "", "")
+	err = socket.RunClient(context.Background(), socket.ClientOptions{
+		ServerID: serverDeviceID,
+		Cert:     cert,
+		// RelayURI stays empty: resolve via discovery.
+		DiscoveryServer: socket.DefaultDiscoveryURL,
+		TryDirect:       true,
+	})
 
 	if err != nil && !strings.Contains(err.Error(), "EOF") {
 		return fmt.Errorf("client failed: %v", err)
