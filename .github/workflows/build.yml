@@ -22,6 +22,8 @@ jobs:
           filters: |
             cli:
               - 'cmd/**'
+              - 'discovery/**'
+              - 'identity/**'
               - 'client/**'
               - 'server/**'
               - '*.go'
@@ -35,6 +37,8 @@ jobs:
             android:
               - 'android/**'
               - 'mobile/**'
+              - 'discovery/**'
+              - 'identity/**'
               - '*.go'
               - 'go.mod'
               - 'go.sum'
