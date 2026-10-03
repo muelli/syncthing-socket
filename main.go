@@ -20,6 +20,7 @@ import (
 
 	"github.com/blacktop/go-termimg"
 	"github.com/mdp/qrterminal/v3"
+	"github.com/muelli/syncthing-socket/discovery"
 	"github.com/pires/go-proxyproto"
 	"github.com/pquerna/otp/totp"
 	"github.com/spf13/cobra"
@@ -69,15 +70,9 @@ var Version = "dev"
 // Device ID to its current addresses. Exported so that other entry points into this
 // package, the gomobile bridge in particular, use the same default as the CLI instead of
 // passing an empty string, which produces a relative URL and fails every lookup.
-const DefaultDiscoveryURL = "https://discovery-lookup.syncthing.net/v2/"
-
-// Certificate seed suffixes. The two ends of a connection derive different identities from
-// the same passphrase so that a peer cannot be reflected back onto itself; every derivation
-// must go through one of these.
-const (
-	CertSuffixServer = "server"
-	CertSuffixClient = "client"
-)
+//
+// It forwards to discovery.DefaultURL, which other programs can import on its own.
+const DefaultDiscoveryURL = discovery.DefaultURL
 
 func isTraceEnabled() bool {
 	return slog.Default().Handler().Enabled(context.Background(), LevelTrace)
@@ -510,8 +505,8 @@ func announceAddresses(rc relayURIProvider, directPort int, actualPort int) []st
 
 // DefaultAnnounceInterval is how often a long-running server refreshes its discovery
 // record. It is deliberately lazy: the record outlives it comfortably, and these are
-// shared public servers.
-const DefaultAnnounceInterval = 30 * time.Minute
+// shared public servers. It forwards to discovery.DefaultAnnounceInterval.
+const DefaultAnnounceInterval = discovery.DefaultAnnounceInterval
 
 // UnlockAnnounceInterval is what a machine waiting in its initramfs uses instead.
 //
@@ -606,65 +601,19 @@ func announce(ctx context.Context, cert tls.Certificate, addresses func() []stri
 	}
 }
 
-// DiscoveryRecord is what global discovery knows about a device.
-//
-// Seen is the part that matters to a key holder deciding whether to bother trying: the
-// record itself outlives the machine by over an hour, so its presence says only that the
-// machine announced at some point, while Seen says when.
-type DiscoveryRecord struct {
-	Seen      time.Time
-	Addresses []string
-}
+// DiscoveryRecord is what global discovery knows about a device. It is discovery.Record,
+// kept under this name for existing callers.
+type DiscoveryRecord = discovery.Record
 
-// LookupRecord fetches the full discovery record, timestamp included.
+// LookupRecord fetches the full discovery record, timestamp included. It forwards to
+// discovery.LookupRecord, which other programs can import without this package.
 //
 // Unlike lookup() below it verifies the discovery server's certificate. lookup() is on the
 // unlock path, where a custom or self-hosted discovery server is a supported setup and the
 // peer is authenticated by its own certificate regardless of what discovery claims. This
 // one is only ever pointed at the public endpoint.
 func LookupRecord(ctx context.Context, serverID string, discoveryServer string) (*DiscoveryRecord, error) {
-	urlStr := fmt.Sprintf("%s&device=%s", discoveryServer, serverID)
-	if !strings.Contains(discoveryServer, "?") {
-		urlStr = fmt.Sprintf("%s?device=%s", discoveryServer, serverID)
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Not an error: a machine that has never announced, or has been gone long enough for
-	// the record to expire, is the ordinary "nothing is waiting" case.
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("discovery lookup returned HTTP %d", resp.StatusCode)
-	}
-
-	var body struct {
-		Seen      string   `json:"seen"`
-		Addresses []string `json:"addresses"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
-	}
-
-	record := &DiscoveryRecord{Addresses: body.Addresses}
-	if body.Seen != "" {
-		// A record we cannot date is treated as undated rather than as an error: the
-		// addresses are still usable, and the caller reports "announced, age unknown".
-		if seen, err := time.Parse(time.RFC3339, body.Seen); err == nil {
-			record.Seen = seen
-		}
-	}
-	return record, nil
+	return discovery.LookupRecord(ctx, serverID, discoveryServer)
 }
 
 func lookup(ctx context.Context, serverID string, discoveryServer string) ([]string, error) {
