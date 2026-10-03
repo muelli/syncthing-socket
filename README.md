@@ -155,6 +155,15 @@ Client ID: F34H6S5-62G6AIP-2G3VHTB-I5D35S6-6T4K5E6-RFL52E4-37C5T3S-7FLHFAQ
 
 ---
 
+## Using it as a Go library
+
+Two small packages can be imported on their own. Both use only the standard library, so they do not pull in the CLI, WebRTC, or the Syncthing libraries:
+
+- `github.com/muelli/syncthing-socket/discovery`: `LookupRecord` resolves a Device ID through Syncthing global discovery (`DefaultURL`) to its announced addresses and when it was last seen.
+- `github.com/muelli/syncthing-socket/identity`: `GenerateDeterministicCert` derives the same certificates as `--seed`; append `CertSuffixServer` or `CertSuffixClient` to the seed for the respective end.
+
+---
+
 ## Unlocking an Encrypted Disk at Boot
 
 The flagship use case. A server or VM with an encrypted root filesystem needs its LUKS

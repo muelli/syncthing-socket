@@ -39,6 +39,9 @@ Welcome to the `syncthing-socket` project! This file serves as a brain-dump and 
 - The code strictly supports compilation for Linux, macOS, and Windows.
 - Always use `//go:build windows` and `//go:build !windows` tags for OS-specific features (e.g., PTY handling).
 
+### Importable Packages
+- `github.com/muelli/syncthing-socket/discovery` and `.../identity` are imported by other projects and must use only the standard library; `importable_test.go` enforces this. The root package forwards to them, so change the implementation there, not in the root.
+
 ### Version String Logic
 - To prevent discrepancies between local builds and CI, version extraction logic is strictly centralized in `scripts/version.sh`.
 - The `Justfile` and `.github/workflows/build.yml` both invoke this script. DO NOT duplicate git versioning logic elsewhere.
