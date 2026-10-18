@@ -1,5 +1,3 @@
-import java.io.ByteArrayOutputStream
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -119,51 +117,54 @@ android {
     }
 }
 
-// Custom task to compile Go code to an AAR library
-tasks.register("buildGoMobile") {
-    val outputAar = file("libs/syncthing-socket.aar")
-    val goMobileDir = rootProject.projectDir.parentFile.resolve("mobile")
+// Compiles the Go side of the app into an AAR with gomobile.
+//
+// A typed Exec task rather than exec {} inside doLast: Gradle can then see its inputs and
+// outputs, skip it when nothing changed, cache its configuration, and fail with the
+// command's own output when gomobile exits non-zero.
+//
+// The inputs are every Go source the bind can compile, not just mobile/. mobile imports
+// the root package, which imports discovery and identity, so watching only mobile/ let a
+// change anywhere else ship inside a stale AAR. Watching all non-test Go files outside
+// android/ errs towards an unnecessary rebuild, never towards a stale one, and needs no
+// edit when a new package is added. go.mod and go.sum are inputs because a dependency bump
+// changes the binary without touching a single .go file.
+val goMobileAar = layout.projectDirectory.file("libs/syncthing-socket.aar")
+val goMobileFlags = listOf(
+    "-target=android", "-androidapi", "26", "-v", "-trimpath",
+    "-ldflags=-s -w -checklinkname=0",
+)
 
-    inputs.dir(goMobileDir)
-    outputs.file(outputAar)
+val buildGoMobile = tasks.register<Exec>("buildGoMobile") {
+    description = "Builds libs/syncthing-socket.aar from the Go sources with gomobile bind."
+    group = "build"
 
-    doLast {
-        if (!file("libs").exists()) {
-            file("libs").mkdirs()
+    val repoRoot = rootProject.projectDir.parentFile
+    inputs.files(
+        fileTree(repoRoot) {
+            include("**/*.go", "go.mod", "go.sum")
+            exclude("**/*_test.go", "android/**", "vendor/**", "local/**")
         }
-        
-        println("Executing gomobile bind...")
-        val stdout = ByteArrayOutputStream()
-        val stderr = ByteArrayOutputStream()
-        
-        try {
-            exec {
-                // Ensure the gomobile binary is available in PATH or run it explicitly.
-                // Assuming gomobile is installed in ~/go/bin or in PATH.
-                val goBin = System.getenv("HOME") + "/go/bin/gomobile"
-                var cmd = "gomobile"
-                if (file(goBin).exists()) {
-                    cmd = goBin
-                }
-                commandLine(cmd, "bind", "-target=android", "-androidapi", "26", "-v", "-trimpath", "-ldflags=-s -w -checklinkname=0", "-o", outputAar.absolutePath, "github.com/muelli/syncthing-socket/mobile")
-                workingDir(rootProject.projectDir.parentFile)
-                standardOutput = stdout
-                errorOutput = stderr
-            }
-            println(stdout.toString())
-        } catch (e: Exception) {
-            println(stderr.toString())
-            throw GradleException("Failed to run gomobile bind: ${e.message}")
-        }
-    }
+    ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("goSources")
+    inputs.property("gomobileFlags", goMobileFlags)
+    outputs.file(goMobileAar).withPropertyName("aar")
+
+    // Prefer a gomobile in ~/go/bin, where `go install` puts it, over whatever PATH offers.
+    val home = providers.environmentVariable("HOME").orNull
+    val installed = home?.let { File(it, "go/bin/gomobile") }
+    executable = if (installed != null && installed.exists()) installed.absolutePath else "gomobile"
+    args(listOf("bind") + goMobileFlags +
+        listOf("-o", goMobileAar.asFile.absolutePath, "github.com/muelli/syncthing-socket/mobile"))
+    workingDir(repoRoot)
+
+    // A local, so the action captures a File rather than the build script.
+    val libsDir = goMobileAar.asFile.parentFile
+    doFirst { libsDir.mkdirs() }
 }
 
-// Ensure GoMobile runs before compilation
-tasks.whenTaskAdded {
-    if (name.startsWith("preBuild") || name.startsWith("compile") || name.startsWith("collect")) {
-        dependsOn("buildGoMobile")
-    }
-}
+// preBuild is the hook the Android Gradle Plugin provides for work that must precede every
+// variant's compilation, so the AAR exists before anything resolves libs/.
+tasks.named("preBuild") { dependsOn(buildGoMobile) }
 
 dependencies {
     implementation(fileTree("libs") { include("*.jar", "*.aar") })
