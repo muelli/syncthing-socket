@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package socket
 
 // A systemd password agent, so a dracut initrd can be unlocked the same way an

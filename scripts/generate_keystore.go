@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command generate_keystore derives a code-signing identity from the single master seed.
 //
 // Every signing identity this project uses comes from one secret, MASTER_SECRET, plus a

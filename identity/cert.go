@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package identity derives syncthing-socket's deterministic TLS identities.
 //
 // Both ends of a connection derive certificates from a shared seed, so each can compute

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package discovery looks up devices on Syncthing's global discovery service.
 //
 // It resolves a Device ID to the addresses the device last announced, and to when it last

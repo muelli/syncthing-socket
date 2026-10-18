@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package main
 
 // OpenPGP key derivation for the `debian` role, used to sign the APT repository's
