@@ -10,7 +10,7 @@ on:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       cli: ${{ steps.filter.outputs.cli }}
       android: ${{ steps.filter.outputs.android }}
@@ -48,7 +48,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.cli == 'true' || startsWith(github.ref, 'refs/tags/') }}
     name: Build CLI Binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
@@ -140,7 +140,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.cli == 'true' || startsWith(github.ref, 'refs/tags/') }}
     name: Build Debian Packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
@@ -237,7 +237,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.android == 'true' || startsWith(github.ref, 'refs/tags/') }}
     name: Build Android App
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       id-token: write
@@ -391,7 +391,7 @@ jobs:
     # ship a partial or stale set to users' apt and F-Droid clients.
     if: startsWith(github.ref, 'refs/tags/')
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
