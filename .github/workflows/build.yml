@@ -266,9 +266,11 @@ jobs:
         # silently moved to an x/mobile that needs a newer Go than this job sets up,
         # and a bind tool newer than the x/mobile the app compiles against is a
         # mismatch waiting to happen anyway.
-        run: |
-          go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
-          gomobile init
+        #
+        # No `gomobile init`: it reinstalls gobind at @latest, undoing the pin, and
+        # otherwise only builds OpenAL, which this app does not use. `gomobile bind`
+        # needs nothing from it beyond gobind on PATH.
+        run: go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
